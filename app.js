@@ -27,6 +27,7 @@ const COLORS = {
 
 let sel = loadSel() || { num: 8, ring: "A" };
 let lockedNum = null;
+let lockedMode = null;   // mode ("maj"/"min") resolved at lock time → consistent display
 const segs = {};
 
 function loadSel() {
@@ -291,7 +292,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v6";  // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v7";  // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const ANALYZE_MS = 66;     // ~15 analýz/s
@@ -534,10 +535,8 @@ function showHubMic(on) {
 // Live favorite — always shown while there's sound. Confidence (>= CONF)
 // only controls the visual certainty (dim = still settling) and the
 // release-lock; it must NOT gate the live display, or the key never shows.
-function setHub(fav, corr, minor, changing) {
+function setHub(fav, corr, mode, decided, changing) {
   showHubMic(false);
-  const pmode = progressionMode(fav);            // null until enough chords
-  const mode = pmode || (minor ? "min" : "maj"); // chroma fallback
 
   // Lock when it has spun ≥ MIN_SPIN_MS, is confident, no change is underway,
   // AND the progression has shown a loop (or a longer fallback elapsed) — so it
@@ -566,8 +565,9 @@ function setHub(fav, corr, minor, changing) {
   const confP = Math.max(0, Math.min(1, (corr - 0.45) / (CONF_SURE - 0.45)));
   setSpin(changing ? 0.15 : Math.min(timeP, confP));
 
-  // Ring colour follows mode; orange→pink only before the progression decides.
-  setRing(locked ? "locked" : "searching", pmode || (locked ? mode : null));
+  // Ring colour follows the resolved mode once the progression (or a lock) has
+  // committed; stays neutral (orange→pink) while the mode is still undecided.
+  setRing(locked ? "locked" : "searching", (decided || locked) ? mode : null);
 }
 
 // Build a 12-bin chroma from the current spectrum using only local spectral
@@ -679,13 +679,27 @@ function analyzeChroma(dt) {
   if (changing && key.fav === heat.fav) disagreeMs = 0; // re-locked → resume slow
 
   // Correct fifth-errors (off-by-one Camelot) using the chord progression's fit.
-  const favNum = correctKey(key.fav, key.raw);
-  const corr = key.raw[favNum];
-  const mode = progressionMode(favNum) || (key.minor ? "min" : "maj");
+  const favNum0 = correctKey(key.fav, key.raw);
+  const corr = key.raw[favNum0];           // confidence from the chroma centre
+  const pmode = progressionMode(favNum0);  // "maj"/"min"/null — did the progression decide?
+  let mode = pmode || (key.minor ? "min" : "maj");
+  let favNum = favNum0;
+  let decided = pmode !== null;
+  // Parallel-minor redirect: a minor reading whose ROOT-minor chord (e.g. Gm)
+  // dominates the relative-minor tonic (Em) is the PARALLEL minor — a different
+  // Camelot number (G major 9 → G minor 6), not the relative minor on the same
+  // number. Without this the app can only ever reach the relative minor of a
+  // major-favoured centre, mislabelling Gm songs as Em, Am songs as C, etc.
+  if (mode === "min") {
+    const r = ((7 * (favNum0 - 8)) % 12 + 12) % 12;
+    const gp = chordTime[r + ":min"] || 0;              // parallel tonic (Gm for G)
+    const gr = chordTime[(r + 9) % 12 + ":min"] || 0;   // relative tonic (Em for G)
+    if (gp > Math.max(gr * 1.5, 0.5)) { favNum = ((favNum0 + 8) % 12) + 1; decided = true; }
+  }
 
-  lastResult = { fav: favNum, corr };
+  lastResult = { fav: favNum, corr, mode };
   applyHeatmap(heat.norm, favNum);     // wheel reacts to chords, key pair pulses
-  setHub(favNum, corr, key.minor, changing);
+  setHub(favNum, corr, mode, decided, changing);
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
   const [rNote, rSemi] = DATA[favNum][mode === "min" ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
@@ -970,6 +984,7 @@ function stopListening() {
 
   if (lastResult && lastResult.corr >= CONF) {
     lockedNum = lastResult.fav;
+    lockedMode = lastResult.mode;
     renderLocked();
   } else {
     lockedNum = null;
@@ -996,7 +1011,8 @@ function renderLocked() {
   lastFav = null;
   showHubMic(false);
   // Final locked result → single resolved key + border in the mode colour.
-  const mode = progressionMode(lockedNum) || "maj";
+  // Use the mode resolved live (incl. parallel-minor redirect), not a recompute.
+  const mode = lockedMode || progressionMode(lockedNum) || "maj";
   const ring = mode === "min" ? "A" : "B";
   setRing("locked", mode);
   hubCode.style.opacity = "1";
