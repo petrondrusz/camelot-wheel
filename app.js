@@ -20,8 +20,8 @@ const CX = 200, CY = 200;
 const RINGS = { B: [136, 194, 174, 150], A: [80, 136, 117, 96] };
 
 const COLORS = {
-  B:   { fill: "rgba(10,228,72,0.10)", stroke: "rgba(10,228,72,0.45)", t1: "#8DF5AE", t2: "#4FB872" },
-  A:   { fill: "rgba(157,149,255,0.10)", stroke: "rgba(157,149,255,0.45)", t1: "#C9C4FF", t2: "#8C85DE" },
+  B:   { fill: "url(#durGrad)",  stroke: "rgba(10,228,72,0.55)",   t1: "#8DF5AE", t2: "#4FB872" },
+  A:   { fill: "url(#mollGrad)", stroke: "rgba(157,149,255,0.55)", t1: "#C9C4FF", t2: "#8C85DE" },
   sel: { fill: "url(#selGrad)", stroke: "#FF8709", t1: "#1C0A05", t2: "#4A1C10" }
 };
 
@@ -79,18 +79,33 @@ function fretE(s) { return (s - 4 + 12) % 12; }
 function fretA(s) { return (s - 9 + 12) % 12; }
 
 function addDefs(svg, id) {
-  const defs = el("defs", {});
-  const lg = el("linearGradient", { id: id, x1: "0", y1: "0", x2: "1", y2: "1" });
-  const s1 = el("stop", { offset: "0%", "stop-color": "#FF8709" });
-  const s2 = el("stop", { offset: "100%", "stop-color": "#FB64B6" });
-  lg.append(s1, s2);
+  // Orange→pink selection gradient (per-element). Reused for the fret dot too.
+  addGrad(svg, id, "#FF8709", "#FB64B6");
+}
+
+// Append a linear gradient. With `span` ([x1,y1,x2,y2]) it spans the wheel's
+// user space, so all wedges of a ring share one coherent diagonal; without it,
+// it maps to each element's own box.
+function addGrad(svg, id, c1, c2, span) {
+  let defs = svg.querySelector("defs");
+  if (!defs) { defs = el("defs", {}); svg.appendChild(defs); }
+  const attrs = span
+    ? { id, gradientUnits: "userSpaceOnUse", x1: span[0], y1: span[1], x2: span[2], y2: span[3] }
+    : { id, x1: "0", y1: "0", x2: "1", y2: "1" };
+  const lg = el("linearGradient", attrs);
+  lg.append(
+    el("stop", { offset: "0%", "stop-color": c1 }),
+    el("stop", { offset: "100%", "stop-color": c2 })
+  );
   defs.appendChild(lg);
-  svg.appendChild(defs);
 }
 
 function buildWheel() {
   const wheel = document.getElementById("wheel");
-  addDefs(wheel, "selGrad");
+  addGrad(wheel, "selGrad", "#FF8709", "#FB64B6");
+  // Ring gradients (GSAP-style), spanning the wheel for one coherent diagonal.
+  addGrad(wheel, "durGrad", "#62F593", "#06B838", [40, 40, 360, 360]);
+  addGrad(wheel, "mollGrad", "#C3B0FF", "#7A5BFF", [40, 40, 360, 360]);
   for (let k = 1; k <= 12; k++) {
     const th = (k * 30 - 90) * Math.PI / 180;
     const gap = 1.7 * Math.PI / 180;
@@ -168,7 +183,8 @@ function update() {
     const isSel = key === sel.num + sel.ring;
     const isComp = compKeys.includes(key);
     const c = isSel ? COLORS.sel : COLORS[s.ring];
-    s.p.setAttribute("fill", isSel ? c.fill : (isComp ? c.fill.replace("0.10", "0.28") : c.fill));
+    s.p.setAttribute("fill", c.fill);
+    s.p.setAttribute("fill-opacity", isSel ? "1" : (isComp ? "0.34" : "0.14"));
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
     s.t2.setAttribute("fill", c.t2);
@@ -264,9 +280,6 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-// RGB základních barev prstenců (pro živou heatmapu)
-const RING_RGB = { B: "10,228,72", A: "157,149,255" };
-
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const ANALYZE_MS = 66;     // ~15 analýz/s
 const EMA_TAU = 3;         // časová konstanta vyhlazování [s]
@@ -279,7 +292,8 @@ let freqBuf = null;
 let timeBuf = null;
 let rafId = null;
 let listening = false;
-let emaChroma = null;
+let emaChroma = null;   // short EMA → heatmap
+let keySum = null;      // long cumulative sum → overall key
 let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
@@ -341,8 +355,6 @@ function scoreKeys(chroma) {
   return { norm, fav, corr: cam[fav], minor: camMinor[fav] };
 }
 
-function rgba(ring, alpha) { return "rgba(" + RING_RGB[ring] + "," + alpha.toFixed(3) + ")"; }
-
 // Živá heatmapa — obě výseče páru (A i B) podle skóre svého čísla.
 // Nejpravděpodobnější pár (fav) navíc pulzuje (.detected) — opacity řídí CSS
 // animace, takže ji tady nepřepisujeme inline stylem.
@@ -356,7 +368,8 @@ function applyHeatmap(norm, fav) {
     s.g.classList.toggle("detected", isFav);
     if (isFav) s.g.style.opacity = "";
     else s.g.style.opacity = (0.12 + 0.88 * sc).toFixed(3);
-    s.p.setAttribute("fill", rgba(s.ring, 0.08 + 0.5 * sc));
+    s.p.setAttribute("fill", c.fill);
+    s.p.setAttribute("fill-opacity", (0.14 + 0.5 * sc).toFixed(3));
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
     s.t2.setAttribute("fill", c.t2);
@@ -420,16 +433,24 @@ function analyzeChroma(dt) {
   if (mx <= 0) { lastResult = null; showHubMic(true); return; }
   for (let i = 0; i < 12; i++) chroma[i] /= mx;
 
+  // Two time scales:
+  //  • short EMA (~3 s) tracks the current chord region → live heatmap.
+  //  • long cumulative sum since the listen began → the song's overall key.
+  //    Momentary chords average out; the tonal centre (tonic/dominant) stays.
+  //    (Pearson is scale-invariant, so the raw running sum needs no division.)
   const a = Math.exp(-dt / EMA_TAU);
   if (!emaChroma) emaChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) emaChroma[i] = emaChroma[i] * a + chroma[i] * (1 - a);
+  if (!keySum) keySum = Array.from(chroma);
+  else for (let i = 0; i < 12; i++) keySum[i] += chroma[i];
 
-  const { norm, fav, corr, minor } = scoreKeys(emaChroma);
-  lastResult = { fav, corr };
-  applyHeatmap(norm, fav);
-  setHub(fav, corr);
+  const heat = scoreKeys(emaChroma);   // recent chords → heatmap colours
+  const key = scoreKeys(keySum);       // accumulated → overall key
+  lastResult = { fav: key.fav, corr: key.corr };
+  applyHeatmap(heat.norm, key.fav);    // wheel reacts to chords, key pair pulses
+  setHub(key.fav, key.corr);
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
-  const [rNote, rSemi] = DATA[fav][minor ? "A" : "B"];
+  const [rNote, rSemi] = DATA[key.fav][key.minor ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
 }
 
@@ -494,6 +515,7 @@ function startListening() {
   listening = true;
   lockedNum = null;
   emaChroma = null;
+  keySum = null;
   lastFav = null;
   lastResult = null;
   lastAnalyzeT = 0;
@@ -573,6 +595,7 @@ function renderLocked() {
     s.g.classList.toggle("sel", isLock);
     s.g.classList.remove("detected");
     s.p.setAttribute("fill", c.fill);
+    s.p.setAttribute("fill-opacity", isLock ? "1" : "0.14");
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
     s.t2.setAttribute("fill", c.t2);

@@ -182,8 +182,18 @@ body {
 }
 
 .chip .code { font-weight: 600; }
-.chip .code.dur { color: var(--green); }
-.chip .code.moll { color: var(--violet); }
+.chip .code.dur {
+  background: linear-gradient(120deg, #62F593, #06B838);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.chip .code.moll {
+  background: linear-gradient(120deg, #C3B0FF, #7A5BFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 
 .chip:active { transform: scale(0.95); }
 
