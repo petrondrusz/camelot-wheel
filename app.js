@@ -301,7 +301,7 @@ const MIN_SPIN_MS = 15000; // spinner se točí aspoň 15 s, než se vůbec zamk
 const CONF_SURE = 0.68;    // horní mez pro škálu rychlosti spinneru (progress)
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const SILENCE_DB = -85;    // pod tím je ticho (mic ikona, analýza neběží)
-const WEAK_DB = -68;       // vyhlazená úroveň pod tímhle = slabý signál → varování
+const WEAK_DB = -74;       // vyhlazená úroveň pod tímhle = slabý signál → varování
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 const CHORD_MEM_TAU = 20;  // paměť progrese [s] — leaky, ať se nová píseň prosadí
 
@@ -310,7 +310,7 @@ const CHORD_TAU = 0.45;    // krátké okno pro akord [s]
 const CHORD_MIN = 0.55;    // min. shoda se šablonou akordu
 const CHORD_MARGIN = 0.04; // min. náskok favorita nad druhým
 const CHORD_HOLD_MS = 320; // jak dlouho musí kandidát vydržet, než se zapíše
-const BASS_BONUS = 0.12;   // bonus, když nejnižší tón = root akordu
+const BASS_BONUS = 0.2;    // bonus, když nejnižší tón = root akordu (kotví na bas)
 const MAX_CHORDS = 4;      // kolik akordů držet v progression stripu
 const MAJ_T = [0, 4, 7], MIN_T = [0, 3, 7];
 const SHARP = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
@@ -404,30 +404,57 @@ function scoreKeys(chroma) {
 // Major tonic semitone of a Camelot number (inverse of the mapping in scoreKeys).
 function majRoot(m) { return ((7 * (m - 8)) % 12 + 12) % 12; }
 
+// The six diatonic triads of a Camelot key's major scale as [root, quality,
+// weight]. Weights favour the pillars (I, V, vi, IV) that define the key.
+function diatonicTriads(m) {
+  const r = majRoot(m);
+  return [
+    [r, "maj", 2.0],            // I
+    [(r + 2) % 12, "min", 1.0], // ii
+    [(r + 4) % 12, "min", 1.0], // iii
+    [(r + 5) % 12, "maj", 1.2], // IV
+    [(r + 7) % 12, "maj", 1.4], // V
+    [(r + 9) % 12, "min", 1.4]  // vi (= relative minor tonic)
+  ];
+}
+
+// Candidate chord templates for detection: union of the diatonic triads of a
+// key and its two fifth-neighbours, so the *discriminating* chords (e.g. Bb-maj
+// for Eb vs Bb-min for Ab) can actually be heard and used to pick the key.
+function candidateTriads(n0) {
+  const seen = {}, out = [];
+  for (const m of [mod12(n0 - 1), n0, mod12(n0 + 1)]) {
+    for (const [root, q] of diatonicTriads(m)) {
+      const k = root + ":" + q;
+      if (!seen[k]) { seen[k] = 1; out.push([root, q]); }
+    }
+  }
+  return out;
+}
+
 // Perfect-fifth correction: chroma confuses a key with its dominant/subdominant
-// (adjacent Camelot numbers, a fifth apart — e.g. Db↔Ab, 6↔7). The progression
-// disambiguates: prefer the neighbour whose tonic chords (I + relative i) are
-// actually held the longest. Deliberately conservative so it can't break a
-// detection chroma is already sure about:
-//   • needs enough progression evidence (≥5 s of chords),
-//   • only considers a neighbour chroma finds genuinely plausible (≈ tie),
-//   • only overrides on a clear support margin (1.4×).
+// (adjacent Camelot numbers — Db↔Ab, 5↔4) because they share 6 of 7 notes. But
+// their diatonic CHORDS differ in quality, so score each candidate by how much
+// the played progression fits its diatonic triads (quality-aware), and pick the
+// best fit. Conservative: needs ≥5 s of chords, a chroma-plausible neighbour,
+// and a clear fit margin — so it won't break a detection chroma is sure about.
+function keyFit(m) {
+  let s = 0;
+  for (const [root, q, w] of diatonicTriads(m)) s += (chordTime[root + ":" + q] || 0) * w;
+  return s;
+}
 function correctKey(n0, raw) {
   let total = 0;
   for (const k in chordTime) total += chordTime[k];
   if (total < 5) return n0;
-  const support = m => {
-    const r = majRoot(m);
-    return (chordTime[r + ":maj"] || 0) + (chordTime[(r + 9) % 12 + ":min"] || 0);
-  };
-  const s0 = support(n0);
-  let best = n0, bestS = s0;
+  const f0 = keyFit(n0);
+  let best = n0, bestF = f0;
   for (const m of [mod12(n0 - 1), mod12(n0 + 1)]) {
     if (raw[m] < raw[n0] - 0.1) continue; // chroma clearly prefers n0 → don't touch it
-    const s = support(m);
-    if (s > bestS) { bestS = s; best = m; }
+    const f = keyFit(m);
+    if (f > bestF) { bestF = f; best = m; }
   }
-  return (best !== n0 && bestS > s0 * 1.4) ? best : n0;
+  return (best !== n0 && bestF > f0 * 1.15) ? best : n0;
 }
 
 // Živá heatmapa — obě výseče páru (A i B) podle skóre svého čísla.
@@ -558,7 +585,7 @@ function frameChroma() {
     if (db < freqBuf[i - 1] || db < freqBuf[i + 1]) continue; // keep local peaks only
     const f = i * binHz;
     const mag = Math.pow(10, db / 20);
-    const lf = Math.log2(f / 700);                 // mild mid-range emphasis
+    const lf = Math.log2(f / 400);                 // emphasis on harmony fundamentals
     const wf = Math.exp(-(lf * lf) / (2 * 1.6 * 1.6));
     const pc = ((Math.round(12 * Math.log2(f / 440) + 69) % 12) + 12) % 12;
     chroma[pc] += Math.sqrt(mag) * wf;             // sqrt tames drums/bass
@@ -603,10 +630,10 @@ function analyzeChroma(dt) {
   const chroma = fr.chroma;
   analyzedMs += dt * 1000;
 
-  // Weak-signal hint from a smoothed level with hysteresis (no per-frame blink).
-  const aL = Math.exp(-dt / 0.5);
+  // Weak-signal hint from a smoothed level with wide hysteresis (no blinking).
+  const aL = Math.exp(-dt / 0.8);
   levelDb = levelDb === null ? fr.db : levelDb * aL + fr.db * (1 - aL);
-  if (weakWarn ? levelDb > WEAK_DB + 6 : levelDb < WEAK_DB) weakWarn = !weakWarn;
+  if (weakWarn ? levelDb > WEAK_DB + 9 : levelDb < WEAK_DB) weakWarn = !weakWarn;
   micStatus(weakWarn ? "Sound signal is weak" : "");
 
   // Short EMA (~3 s) → responsive heatmap (current chords).
@@ -633,7 +660,7 @@ function analyzeChroma(dt) {
   const key = scoreKeys(keyEma);
   if (changing && key.fav === heat.fav) disagreeMs = 0; // re-locked → resume slow
 
-  // Correct fifth-errors (off-by-one Camelot) using the chord progression.
+  // Correct fifth-errors (off-by-one Camelot) using the chord progression's fit.
   const favNum = correctKey(key.fav, key.raw);
   const corr = key.raw[favNum];
   const mode = progressionMode(favNum) || (key.minor ? "min" : "maj");
@@ -645,14 +672,15 @@ function analyzeChroma(dt) {
   const [rNote, rSemi] = DATA[favNum][mode === "min" ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
 
-  // Live chords — short window, constrained to the corrected key's diatonic triads.
+  // Live chords — short window. Detected over the union of the chroma key and its
+  // fifth-neighbours so discriminating chords get heard; that same tally drives
+  // the fifth-correction above.
   const aC = Math.exp(-dt / CHORD_TAU);
   if (!chordChroma) chordChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) chordChroma[i] = chordChroma[i] * aC + chroma[i] * (1 - aC);
-  updateChord(chordChroma, fr.bass, favNum, dt);
-  // Leaky tally of time per chord → major/minor (and fifth-correction) from the
-  // progression. Decays so a new song's chords overcome the previous one's
-  // (e.g. a 10A → 10B relative flip, which chroma alone can't see).
+  updateChord(chordChroma, fr.bass, candidateTriads(key.fav), favNum, dt);
+  // Leaky tally of time per chord → major/minor and fifth-correction from the
+  // progression. Decays so a new song's chords overcome the previous one's.
   const decay = Math.exp(-dt / CHORD_MEM_TAU);
   for (const k in chordTime) chordTime[k] *= decay;
   if (chordCur) {
@@ -672,25 +700,21 @@ function progressionMode(keyNum) {
   return min > maj ? "min" : "maj";
 }
 
-// Best-matching chord among the six diatonic triads of the key's major scale.
-// The scale degree fixes each root's quality, so we don't need to read the
-// (often weak) third — the key does the disambiguation for us.
-function detectChord(ch, bass, keyNum) {
-  const r = ((7 * (keyNum - 8)) % 12 + 12) % 12; // major tonic of this Camelot number
-  const cands = [
-    [r, "maj"], [(r + 2) % 12, "min"], [(r + 4) % 12, "min"],
-    [(r + 5) % 12, "maj"], [(r + 7) % 12, "maj"], [(r + 9) % 12, "min"]
-  ];
+// Best-matching chord among the given candidate triads. The bass note anchors
+// the root strongly — the bassline carries the harmony, so this keeps the
+// detector on the backing chords instead of chasing a loud vocal melody.
+function detectChord(ch, bass, triads) {
   let cn = 0;
   for (let i = 0; i < 12; i++) cn += ch[i] * ch[i];
   cn = Math.sqrt(cn) + 1e-9;
   let best = null, b1 = -1, b2 = -1;
-  for (const [root, q] of cands) {
+  for (const [root, q] of triads) {
     const t = q === "maj" ? MAJ_T : MIN_T;
     let dot = 0;
     for (const off of t) dot += ch[(root + off) % 12];
-    let score = dot / (Math.sqrt(3) * cn);   // cosine vs binary triad template
-    if (bass === root) score += BASS_BONUS;  // bass note confirms the root
+    let score = dot / (Math.sqrt(3) * cn);              // cosine vs binary triad template
+    if (bass === root) score += BASS_BONUS;             // bass = root → strong confirm
+    else if (bass === (root + 7) % 12) score += BASS_BONUS * 0.4; // bass = fifth
     if (score > b1) { b2 = b1; b1 = score; best = [root, q]; }
     else if (score > b2) b2 = score;
   }
@@ -704,8 +728,8 @@ function chordName(root, qual, keyNum) {
 }
 
 // Commit a new chord only after it has persisted (debounce) → stable strip.
-function updateChord(ch, bass, keyNum, dt) {
-  const det = detectChord(ch, bass, keyNum);
+function updateChord(ch, bass, triads, keyNum, dt) {
+  const det = detectChord(ch, bass, triads);
   if (det.score < CHORD_MIN || det.margin < CHORD_MARGIN) return; // unsure → hold last
   if (chordCur && chordCur.root === det.root && chordCur.qual === det.qual) {
     chordCand = null; chordCandMs = 0;
