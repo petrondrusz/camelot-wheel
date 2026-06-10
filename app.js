@@ -292,9 +292,11 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v10"; // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v11"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
+const CONF_LOCK_MIN = 0.4; // po dlouhém stabilním držení (LOCK_FALLBACK_MS) stačí k zámku
+                           // i nižší korelace — harmonicky husté songy stropují kolem 0.45
 const ANALYZE_MS = 66;     // ~15 analýz/s
 const EMA_TAU = 3;         // heatmapa — krátké vyhlazování [s]
 const KEY_TAU = 18;        // celková tónina — pomalý, stabilní integrátor [s]
@@ -549,9 +551,13 @@ function setHub(fav, corr, mode, decided, changing) {
   // AND the progression has shown a loop (or a longer fallback elapsed) — so it
   // hears the chords cycle before committing rather than snapping early.
   const wasLocked = ringKey.startsWith("locked");
-  const progressed = loopSeen || analyzedMs >= LOCK_FALLBACK_MS;
-  const locked = !changing && analyzedMs >= MIN_SPIN_MS && progressed &&
-                 corr >= (wasLocked ? CONF - 0.06 : CONF + 0.06);
+  // After a long, stable hold the number has proven itself — relax the
+  // confidence floor so harmonically dense songs (K-K correlation ~0.45, e.g.
+  // Billie Jean) can finally commit instead of spinning forever.
+  const held = analyzedMs >= LOCK_FALLBACK_MS;
+  const progressed = loopSeen || held;
+  const floor = held ? CONF_LOCK_MIN : (wasLocked ? CONF - 0.06 : CONF + 0.06);
+  const locked = !changing && analyzedMs >= MIN_SPIN_MS && progressed && corr >= floor;
 
   const favChanged = fav !== lastFav;
   lastFav = fav;
@@ -569,7 +575,7 @@ function setHub(fav, corr, mode, decided, changing) {
 
   // Spinner speed: progress gated by time & confidence (slow while changing).
   const timeP = Math.min(1, analyzedMs / MIN_SPIN_MS);
-  const confP = Math.max(0, Math.min(1, (corr - 0.45) / (CONF_SURE - 0.45)));
+  const confP = Math.max(0, Math.min(1, (corr - 0.4) / (CONF_SURE - 0.4)));
   setSpin(changing ? 0.15 : Math.min(timeP, confP));
 
   // Ring colour follows the resolved mode once the progression (or a lock) has
@@ -698,9 +704,13 @@ function analyzeChroma(dt) {
   const gRelT = chordTime[(rr + 9) % 12 + ":min"] || 0;  // relative-minor tonic (Cm / Em)
   const gParT = chordTime[rr + ":min"] || 0;             // parallel-minor tonic (Ebm / Gm)
   let mode, decided;
+  // Trust the chroma's own mode strongly: only flip to the RELATIVE key when the
+  // chord evidence is overwhelming (1.8×), not merely leaning. A minor song often
+  // leans on its III chord (F#m → lots of A major) without being in A — that must
+  // NOT flip 11A→11B and keep it oscillating so it never locks (Billie Jean).
   if (gMajT < 0.3 && gRelT < 0.3) { mode = key.minor ? "min" : "maj"; decided = false; }
-  else if (key.minor) { mode = gMajT > gRelT * 1.3 ? "maj" : "min"; decided = true; }
-  else { mode = gRelT > gMajT * 1.3 ? "min" : "maj"; decided = true; }
+  else if (key.minor) { mode = gMajT > gRelT * 1.8 ? "maj" : "min"; decided = true; }
+  else { mode = gRelT > gMajT * 1.8 ? "min" : "maj"; decided = true; }
   // Parallel-minor redirect: the ROOT's own minor (a DIFFERENT Camelot number,
   // n→n−3) wins when its tonic clearly dominates both others — reaches Gm (6A)
   // where the app could otherwise only land on the relative Em (Feeling Good).
@@ -993,7 +1003,10 @@ function stopListening() {
   if (micSrc) { try { micSrc.disconnect(); } catch (e) {} micSrc = null; }
   analyser = null;
 
-  if (lastResult && lastResult.corr >= CONF) {
+  // Mirror setHub's relaxed floor: a result held long enough to lock live must
+  // also survive a manual stop, not be discarded for low correlation.
+  const stopFloor = analyzedMs >= LOCK_FALLBACK_MS ? CONF_LOCK_MIN : CONF;
+  if (lastResult && lastResult.corr >= stopFloor) {
     lockedNum = lastResult.fav;
     lockedMode = lastResult.mode;
     renderLocked();
