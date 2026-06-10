@@ -1,0 +1,14 @@
+{
+  "name": "Camelot kolo \u00b7 kytarov\u00fd tah\u00e1k",
+  "short_name": "Camelot",
+  "description": "Interaktivn\u00ed Camelot kolo pro kytaristy",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D0D12",
+  "theme_color": "#0D0D12",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Camelot kolo · kytarový tahák</title>
+<meta name="description" content="Interaktivní Camelot kolo pro kytaristy — tóniny, kompatibilní přechody a poloha základního tónu na hmatníku.">
+<meta name="theme-color" content="#0D0D12">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+  <header class="head">
+    <h1>Camelot<span class="dot">.</span></h1>
+    <p class="sub">harmonický tahák pro kytaru</p>
+  </header>
+
+  <section class="wheel-wrap" aria-label="Camelot kolo">
+    <svg id="wheel" viewBox="0 0 400 400" role="application" aria-label="Camelot kolo — výběr tóniny">
+      <title>Camelot kolo</title>
+      <desc>Dvanáct výsečí ve dvou prstencích. Vnější prstenec B jsou durové tóniny, vnitřní prstenec A mollové. Klepnutím se vybere tónina.</desc>
+    </svg>
+  </section>
+
+  <section class="compat" aria-label="Kompatibilní tóniny">
+    <p class="compat-label">Plynulá návaznost</p>
+    <div id="chips" class="chips" role="group" aria-label="Kompatibilní tóniny pro mix"></div>
+  </section>
+
+  <section class="fret-card" aria-label="Poloha na hmatníku">
+    <p id="fret-info" class="fret-info" aria-live="polite"></p>
+    <svg id="fret" viewBox="0 0 360 132" role="img" aria-label="Hmatník — poloha základního tónu na strunách E a A">
+      <title>Hmatník</title>
+      <desc>Spodní struny E a A se zvýrazněným základním tónem vybrané tóniny.</desc>
+    </svg>
+  </section>
+
+  <footer class="rules">
+    <p><span class="k">±1</span> stejné písmeno — sousední kvinta</p>
+    <p><span class="k">A↔B</span> stejné číslo — relativní dur a moll</p>
+    <p><span class="k">=</span> stejný kód — stejná tónina</p>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

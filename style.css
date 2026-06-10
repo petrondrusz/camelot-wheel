@@ -1,0 +1,187 @@
+:root {
+  --bg: #0D0D12;
+  --surface: #16161D;
+  --surface-2: #1D1D26;
+  --line: #26262F;
+  --text: #F2F1ED;
+  --muted: #9C9AA3;
+  --faint: #5C5B66;
+  --amber: #F2A33C;
+  --amber-deep: #2B1D08;
+  --teal: #3AC2A0;
+  --violet: #8E86E8;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: dark;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Outfit", system-ui, -apple-system, sans-serif;
+  font-weight: 400;
+  line-height: 1.5;
+  min-height: 100dvh;
+  padding: max(env(safe-area-inset-top), 20px) 16px max(env(safe-area-inset-bottom), 24px);
+}
+
+.app {
+  max-width: 460px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.head h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.head .dot { color: var(--amber); }
+
+.head .sub {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.wheel-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+#wheel {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  display: block;
+  touch-action: manipulation;
+}
+
+#wheel g.seg {
+  cursor: pointer;
+  transition: opacity 160ms var(--ease-out);
+}
+
+#wheel g.seg path {
+  transition: fill 160ms var(--ease-out), stroke 160ms var(--ease-out);
+}
+
+#wheel g.seg:focus-visible { outline: none; }
+#wheel g.seg:focus-visible path { stroke-width: 2.5; }
+
+@media (hover: hover) and (pointer: fine) {
+  #wheel g.seg:not(.sel):hover { opacity: 0.85; }
+}
+
+.compat-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 10px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), transform 120ms var(--ease-out);
+}
+
+.chip .code { font-weight: 600; }
+.chip .code.dur { color: var(--teal); }
+.chip .code.moll { color: var(--violet); }
+
+.chip:active { transform: scale(0.97); }
+
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover { border-color: var(--faint); background: var(--surface-2); }
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.fret-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.fret-info {
+  font-size: 15px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.fret-info strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+#fret { width: 100%; height: auto; display: block; }
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.rules p {
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.rules .k {
+  display: inline-block;
+  min-width: 34px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .head, .wheel-wrap, .compat, .fret-card, .rules {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: rise 300ms var(--ease-out) forwards;
+  }
+  .wheel-wrap { animation-delay: 40ms; }
+  .compat { animation-delay: 80ms; }
+  .fret-card { animation-delay: 120ms; }
+  .rules { animation-delay: 160ms; }
+}
+
+@keyframes rise {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #wheel g.seg, #wheel g.seg path, .chip { transition: none; }
+}
