@@ -289,6 +289,15 @@ předpoklad poruší, appka trefí centrum, ale mód/číslo může minout:
   objektivně sporné, i komerční detektory nesouhlasí.
 - **Jazz/soul s chromatikou** (Nina Simone „Feeling Good"): víc tonálních center,
   chroma „dopadne" jinam podle pasáže.
+- **Řídký modální riff** (White Stripes „Seven Nation Army" = E moll 9A): jen
+  basový riff, žádné akordy. E moll a C dur sdílí skoro všechny tóny a riff
+  prochází přes C → chroma dlouho váhá 8B↔9A. Když se chroma usadí na 9A
+  (r0.70), trefí to; ale `correctKey` občas stáhne správné 9A na 8B, protože
+  C dur (♭VI E moll) napumpuje keyFit. **Nejde to bezpečně opravit:** tenhle
+  override (9A r0.56 → 8B r0.53) je strukturálně **identický** s tím, co
+  správně zachránilo Billie Jean (12A r0.47 → 11A r0.45) — cíl o ~0.02–0.03
+  nižší chroma, mnohem vyšší keyFit. keyFit ty dva případy nerozliší, takže
+  zpřísnění gate by rozbilo Billie Jean.
 
 Tyhle se **záměrně neřeší** — principiální fix (mixolydian profil) by zaváděl
 nové záměny (A-mix a D dur mají identické noty) a riskoval rozladění čistých
