@@ -291,6 +291,8 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
+const APP_VERSION = "v6";  // bump při každém deployi — ukazuje se v debug overlay,
+                           // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const ANALYZE_MS = 66;     // ~15 analýz/s
 const EMA_TAU = 3;         // heatmapa — krátké vyhlazování [s]
@@ -723,14 +725,14 @@ function renderDebug(key, favNum, corr, mode, bass) {
       "    bass " + (bass >= 0 ? SHARP[bass] : "—") + "\n" +
     "lvl   " + (levelDb == null ? "—" : levelDb.toFixed(0) + "dB") + (weakWarn ? " WEAK" : " ok") +
       "    t " + (analyzedMs / 1000).toFixed(1) + "s    loop " + (loopSeen ? "Y" : "N") + "\n" +
-    "ring  " + ringKey;
+    "ring  " + ringKey + "    " + APP_VERSION;
 }
 
 function toggleDebug() {
   if (debugEl) { debugEl.remove(); debugEl = null; return; }
   debugEl = document.createElement("pre");
   debugEl.id = "debug";
-  debugEl.textContent = "debug on — start listening…";
+  debugEl.textContent = "debug " + APP_VERSION + " — start listening…";
   document.body.appendChild(debugEl);
 }
 
