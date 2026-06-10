@@ -123,16 +123,17 @@ function buildWheel() {
       const p = el("path", { d: wedgePath(r1, r2, a1, a2), "stroke-width": "1" });
       const [tx, ty] = pt(rc, th);
       const [nx, ny] = pt(rn, th);
+      // Primary = note name (letters), secondary = Camelot code.
       const t1 = el("text", {
         x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "central",
         "font-size": "17", "font-weight": "600"
       });
-      t1.textContent = k + ring;
+      t1.textContent = DATA[k][ring][0];
       const t2 = el("text", {
         x: nx, y: ny, "text-anchor": "middle", "dominant-baseline": "central",
         "font-size": "13"
       });
-      t2.textContent = DATA[k][ring][0];
+      t2.textContent = k + ring;
       g.append(p, t1, t2);
       const pick = () => { lockedNum = null; sel = { num: k, ring }; saveSel(); update(); };
       g.addEventListener("click", pick);
@@ -282,7 +283,14 @@ const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34
 
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const ANALYZE_MS = 66;     // ~15 analýz/s
-const EMA_TAU = 3;         // časová konstanta vyhlazování [s]
+const EMA_TAU = 3;         // heatmapa — krátké vyhlazování [s]
+const KEY_TAU = 18;        // celková tónina — pomalý, stabilní integrátor [s]
+const KEY_TAU_FAST = 4;    // při detekované změně písně přeladit rychle [s]
+const CHANGE_MS = 4000;    // jak dlouho musí krátkodobý odhad odporovat, než přeladí
+const WARMUP_FRAMES = 45;  // ~3 s rychlého náběhu na začátku, pak stabilní τ
+const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
+const MIN_PEAK_DB = -72;   // pod tím bereme jako ticho
+const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 
 let audioCtx = null;
 let analyser = null;
@@ -293,7 +301,9 @@ let timeBuf = null;
 let rafId = null;
 let listening = false;
 let emaChroma = null;   // short EMA → heatmap
-let keySum = null;      // long cumulative sum → overall key
+let keyEma = null;      // long leaky integrator → overall key
+let keyFrames = 0;      // analysed frames since start (for the fast warmup lock)
+let disagreeMs = 0;     // how long the short-term key has fought the settled one
 let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
@@ -411,41 +421,77 @@ function setHub(fav, corr) {
   hubName.style.opacity = tentative ? "0.4" : "1";
 }
 
-function analyzeChroma(dt) {
+// Build a 12-bin chroma from the current spectrum using only local spectral
+// peaks (the harmonic partials) above a relative floor — this drops the noise
+// floor and broadband percussion that contaminate a naive bin-sum. Returns the
+// normalised chroma plus a tonalness weight (how peaky → how trustworthy).
+function frameChroma() {
   analyser.getFloatFrequencyData(freqBuf);
-  const sr = audioCtx.sampleRate;
   const n = analyser.frequencyBinCount;
-  const binHz = sr / analyser.fftSize;
-  const chroma = new Float64Array(12);
-  for (let i = 1; i < n; i++) {
-    const f = i * binHz;
-    if (f < 100) continue;
-    if (f > 5000) break;
-    const db = freqBuf[i];
-    if (!isFinite(db)) continue;
-    const mag = Math.pow(10, db / 20);
-    const pc = ((Math.round(12 * Math.log2(f / 440) + 69) % 12) + 12) % 12;
-    chroma[pc] += Math.sqrt(mag);
-  }
-  // normalizace (max = 1); při tichu nic nepočítáme
-  let mx = 0;
-  for (let i = 0; i < 12; i++) if (chroma[i] > mx) mx = chroma[i];
-  if (mx <= 0) { lastResult = null; showHubMic(true); return; }
-  for (let i = 0; i < 12; i++) chroma[i] /= mx;
+  const binHz = audioCtx.sampleRate / analyser.fftSize;
+  const lo = Math.max(2, Math.floor(BAND_LO / binHz));
+  const hi = Math.min(n - 2, Math.ceil(BAND_HI / binHz));
 
-  // Two time scales:
-  //  • short EMA (~3 s) tracks the current chord region → live heatmap.
-  //  • long cumulative sum since the listen began → the song's overall key.
-  //    Momentary chords average out; the tonal centre (tonic/dominant) stays.
-  //    (Pearson is scale-invariant, so the raw running sum needs no division.)
+  let maxDb = -Infinity;
+  for (let i = lo; i <= hi; i++) if (freqBuf[i] > maxDb) maxDb = freqBuf[i];
+  if (!(maxDb > MIN_PEAK_DB)) return null; // too quiet / silence
+
+  const floorDb = maxDb - PEAK_FLOOR_DB;
+  const chroma = new Float64Array(12);
+  for (let i = lo; i <= hi; i++) {
+    const db = freqBuf[i];
+    if (db < floorDb) continue;
+    if (db < freqBuf[i - 1] || db < freqBuf[i + 1]) continue; // keep local peaks only
+    const f = i * binHz;
+    const mag = Math.pow(10, db / 20);
+    const lf = Math.log2(f / 700);                 // mild mid-range emphasis
+    const wf = Math.exp(-(lf * lf) / (2 * 1.6 * 1.6));
+    const pc = ((Math.round(12 * Math.log2(f / 440) + 69) % 12) + 12) % 12;
+    chroma[pc] += Math.sqrt(mag) * wf;             // sqrt tames drums/bass
+  }
+
+  let sum = 0, mx = 0;
+  for (let i = 0; i < 12; i++) { sum += chroma[i]; if (chroma[i] > mx) mx = chroma[i]; }
+  if (mx <= 0) return null;
+  // Crest = peak/mean: a clear chord is peaky, noise is flat. Maps to a 0.2–1
+  // weight so noisy frames barely move the key estimate but never freeze it.
+  const crest = mx / (sum / 12);
+  const w = Math.min(1, Math.max(0.2, (crest - 2) / 3.5));
+  for (let i = 0; i < 12; i++) chroma[i] /= mx;
+  return { chroma, w };
+}
+
+function analyzeChroma(dt) {
+  const fr = frameChroma();
+  if (!fr) { lastResult = null; showHubMic(true); return; }
+  const chroma = fr.chroma;
+
+  // Short EMA (~3 s) → responsive heatmap (current chords).
   const a = Math.exp(-dt / EMA_TAU);
   if (!emaChroma) emaChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) emaChroma[i] = emaChroma[i] * a + chroma[i] * (1 - a);
-  if (!keySum) keySum = Array.from(chroma);
-  else for (let i = 0; i < 12; i++) keySum[i] += chroma[i];
+  const heat = scoreKeys(emaChroma);
 
-  const heat = scoreKeys(emaChroma);   // recent chords → heatmap colours
-  const key = scoreKeys(keySum);       // accumulated → overall key
+  // Song-change detection: if the short-term key confidently disagrees with the
+  // settled key for several seconds, speed the long integrator up to re-lock.
+  const settled = keyEma ? scoreKeys(keyEma).fav : null;
+  if (settled !== null && heat.fav !== settled && heat.corr > 0.5) disagreeMs += dt * 1000;
+  else disagreeMs = Math.max(0, disagreeMs - dt * 2000);
+  const changing = disagreeMs > CHANGE_MS;
+
+  // Tonalness-weighted leaky integrator → overall key. Fast during the initial
+  // warmup and while a change is in progress, otherwise slow & stable; forgets
+  // old songs over ~KEY_TAU.
+  const warming = keyFrames < WARMUP_FRAMES;
+  const tau = (changing || warming) ? KEY_TAU_FAST : KEY_TAU;
+  const lr = (1 - Math.exp(-dt / tau)) * fr.w;
+  if (!keyEma) keyEma = Array.from(chroma);
+  else for (let i = 0; i < 12; i++) keyEma[i] += lr * (chroma[i] - keyEma[i]);
+  keyFrames++;
+
+  const key = scoreKeys(keyEma);
+  if (changing && key.fav === heat.fav) disagreeMs = 0; // re-locked → resume slow
+
   lastResult = { fav: key.fav, corr: key.corr };
   applyHeatmap(heat.norm, key.fav);    // wheel reacts to chords, key pair pulses
   setHub(key.fav, key.corr);
@@ -515,7 +561,9 @@ function startListening() {
   listening = true;
   lockedNum = null;
   emaChroma = null;
-  keySum = null;
+  keyEma = null;
+  keyFrames = 0;
+  disagreeMs = 0;
   lastFav = null;
   lastResult = null;
   lastAnalyzeT = 0;
