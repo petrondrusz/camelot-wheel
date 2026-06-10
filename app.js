@@ -292,7 +292,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v7";  // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v8";  // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const ANALYZE_MS = 66;     // ~15 analýz/s
@@ -681,20 +681,25 @@ function analyzeChroma(dt) {
   // Correct fifth-errors (off-by-one Camelot) using the chord progression's fit.
   const favNum0 = correctKey(key.fav, key.raw);
   const corr = key.raw[favNum0];           // confidence from the chroma centre
-  const pmode = progressionMode(favNum0);  // "maj"/"min"/null — did the progression decide?
-  let mode = pmode || (key.minor ? "min" : "maj");
+  // Resolve major vs minor by comparing the pair's actual TONIC chords, and trust
+  // the chroma's own mode when chord evidence is weak. The chord detector
+  // mis-qualifies minor tonics, so a shared dominant (Bb is V of Eb AND ♭VII of
+  // Cm) must NOT flip a confident chroma-minor to its relative major — that
+  // mislabelled 'Rolling in the Deep' (Cm → Eb).
+  const rr = ((7 * (favNum0 - 8)) % 12 + 12) % 12;       // major root of the pair
+  const gMajT = chordTime[rr + ":maj"] || 0;             // major tonic (Eb / G …)
+  const gRelT = chordTime[(rr + 9) % 12 + ":min"] || 0;  // relative-minor tonic (Cm / Em)
+  const gParT = chordTime[rr + ":min"] || 0;             // parallel-minor tonic (Ebm / Gm)
+  let mode, decided;
+  if (gMajT < 0.3 && gRelT < 0.3) { mode = key.minor ? "min" : "maj"; decided = false; }
+  else if (key.minor) { mode = gMajT > gRelT * 1.3 ? "maj" : "min"; decided = true; }
+  else { mode = gRelT > gMajT * 1.3 ? "min" : "maj"; decided = true; }
+  // Parallel-minor redirect: the ROOT's own minor (a DIFFERENT Camelot number,
+  // n→n−3) wins when its tonic clearly dominates both others — reaches Gm (6A)
+  // where the app could otherwise only land on the relative Em (Feeling Good).
   let favNum = favNum0;
-  let decided = pmode !== null;
-  // Parallel-minor redirect: a minor reading whose ROOT-minor chord (e.g. Gm)
-  // dominates the relative-minor tonic (Em) is the PARALLEL minor — a different
-  // Camelot number (G major 9 → G minor 6), not the relative minor on the same
-  // number. Without this the app can only ever reach the relative minor of a
-  // major-favoured centre, mislabelling Gm songs as Em, Am songs as C, etc.
-  if (mode === "min") {
-    const r = ((7 * (favNum0 - 8)) % 12 + 12) % 12;
-    const gp = chordTime[r + ":min"] || 0;              // parallel tonic (Gm for G)
-    const gr = chordTime[(r + 9) % 12 + ":min"] || 0;   // relative tonic (Em for G)
-    if (gp > Math.max(gr * 1.5, 0.5)) { favNum = ((favNum0 + 8) % 12) + 1; decided = true; }
+  if (gParT > Math.max(gMajT, gRelT) * 1.5 && gParT > 0.5) {
+    favNum = ((favNum0 + 8) % 12) + 1; mode = "min"; decided = true;
   }
 
   lastResult = { fav: favNum, corr, mode };
