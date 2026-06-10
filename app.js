@@ -283,7 +283,7 @@ let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
 let hubCode = null, hubName = null, hubMic = null;
-let micBtn = null, micStatusEl = null;
+let micBtn = null, micStatusEl = null, appEl = null;
 
 // Button analyzer — symmetric volume bars left/right of the icon.
 const N_BARS = 5;
@@ -319,13 +319,14 @@ function pearsonRot(vec, profile, s) {
 // index favorita a jeho surovou korelaci.
 function scoreKeys(chroma) {
   const cam = new Array(13).fill(-Infinity);
+  const camMinor = new Array(13).fill(false); // did the minor profile win this number?
   for (let s = 0; s < 12; s++) {
     const cM = pearsonRot(chroma, KK_MAJ, s);
     const cm = pearsonRot(chroma, KK_MIN, s);
     const nM = ((8 + 7 * s - 1) % 12) + 1;
     const nm = ((8 + 7 * ((s + 3) % 12) - 1) % 12) + 1;
-    if (cM > cam[nM]) cam[nM] = cM;
-    if (cm > cam[nm]) cam[nm] = cm;
+    if (cM > cam[nM]) { cam[nM] = cM; camMinor[nM] = false; }
+    if (cm > cam[nm]) { cam[nm] = cm; camMinor[nm] = true; }
   }
   let fav = 1, mn = Infinity, mx = -Infinity;
   for (let n = 1; n <= 12; n++) {
@@ -336,7 +337,7 @@ function scoreKeys(chroma) {
   const norm = new Array(13).fill(0);
   const span = mx - mn || 1e-9;
   for (let n = 1; n <= 12; n++) norm[n] = (cam[n] - mn) / span;
-  return { norm, fav, corr: cam[fav] };
+  return { norm, fav, corr: cam[fav], minor: camMinor[fav] };
 }
 
 function rgba(ring, alpha) { return "rgba(" + RING_RGB[ring] + "," + alpha.toFixed(3) + ")"; }
@@ -417,10 +418,13 @@ function analyzeChroma(dt) {
   if (!emaChroma) emaChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) emaChroma[i] = emaChroma[i] * a + chroma[i] * (1 - a);
 
-  const { norm, fav, corr } = scoreKeys(emaChroma);
+  const { norm, fav, corr, minor } = scoreKeys(emaChroma);
   lastResult = { fav, corr };
   applyHeatmap(norm);
   setHub(fav, corr);
+  // Live fretboard — root of the more probable mode of the pair (minor vs major).
+  const [rNote, rSemi] = DATA[fav][minor ? "A" : "B"];
+  updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
 }
 
 // Live volume meter in the button — per-band level with fast attack / slow
@@ -490,6 +494,7 @@ function startListening() {
   micStatus("");
   micBtn.classList.add("listening");
   micBtn.setAttribute("aria-pressed", "true");
+  if (appEl) appEl.classList.add("listening"); // dim chips, light up fretboard
   showHubMic(true); // mic icon until the first reading arrives
 
   // AudioContext vytvořit/resumnout synchronně v rámci gesta (iOS)
@@ -538,6 +543,7 @@ function stopListening() {
   listening = false;
   micBtn.classList.remove("listening");
   micBtn.setAttribute("aria-pressed", "false");
+  if (appEl) appEl.classList.remove("listening");
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micSrc) { try { micSrc.disconnect(); } catch (e) {} micSrc = null; }
@@ -579,6 +585,7 @@ function initMic() {
   hubCode = document.getElementById("hub-code");
   hubName = document.getElementById("hub-name");
   hubMic = document.getElementById("hub-mic");
+  appEl = document.querySelector(".app");
 
   // barsR: center→outer maps to band 0→4. barsL is reversed so the same band
   // sits at the mirrored position on the left (bass near center, treble outside).
