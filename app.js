@@ -292,7 +292,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v9";  // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v10"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const ANALYZE_MS = 66;     // ~15 analýz/s
@@ -322,7 +322,6 @@ const CHORD_MARGIN = 0.04; // min. náskok favorita nad druhým
 const CHORD_HOLD_MS = 320; // jak dlouho musí kandidát vydržet, než se zapíše
 const BASS_BONUS = 0.2;    // bonus, když nejnižší tón = root akordu (kotví na bas)
 const BLUE_BIAS = 0.3;     // moll skóre dolů, je-li přítomná i velká tercie (blues b3)
-const BASS_KEY_W = 8;      // váha bas-toniky v korekci kvint (rozhodčí C↔G apod.)
 const MAX_CHORDS = 4;      // kolik akordů držet v progression stripu
 const MAJ_T = [0, 4, 7], MIN_T = [0, 3, 7];
 const ALL_TRIADS = (() => { const a = []; for (let r = 0; r < 12; r++) a.push([r, "maj"], [r, "min"]); return a; })();
@@ -351,7 +350,6 @@ let chordCand = null;   // candidate chord being timed before commit
 let chordCandMs = 0;
 let chordHist = [];     // recent committed chords [{ name, qual }]
 let chordTime = {};     // accumulated seconds per chord ("root:qual") → mode from progression
-let bassTime = {};      // accumulated seconds per bass pitch-class → tonic tiebreaker (fifths)
 let chordSeq = [];      // recent committed chord keys → loop/cycle detection
 let loopSeen = false;   // the progression has returned to an earlier chord (a loop)
 let lastAnalyzeT = 0;
@@ -450,19 +448,13 @@ function correctKey(n0, raw) {
   let total = 0;
   for (const k in chordTime) total += chordTime[k];
   if (total < 5) return n0;
-  // Bass-tonic tiebreaker: the bass mostly plays the tonic, so reward a pair
-  // whose tonic root (major OR relative-minor) matches the accumulated bass.
-  // This breaks the fifth ambiguity (C vs G) that the chord-fit alone can't —
-  // e.g. Oasis 'Don't Look Back in Anger' (chroma G, but bass + chords say C).
-  let bassTotal = 0;
-  for (const k in bassTime) bassTotal += bassTime[k];
-  const bassBonus = m => {
-    if (bassTotal < 2) return 0;                       // too little bass → ignore
-    const rM = ((7 * (m - 8)) % 12 + 12) % 12;         // major tonic root
-    const rm = (rM + 9) % 12;                          // relative-minor tonic root
-    return BASS_KEY_W * Math.max(bassTime[rM] || 0, bassTime[rm] || 0) / bassTotal;
-  };
-  const ef = m => keyFit(m) + bassBonus(m);
+  // Pure diatonic chord-fit. The fifth ambiguity (C vs G) is decided by which
+  // ONE note differs (F vs F#) — i.e. whether the IV/V chords played fit C or G.
+  // keyFit captures exactly that. (A bass-tonic tiebreaker was tried in v9 but
+  // backfired: the bass often sits on the DOMINANT — G is the V of C *and* the
+  // tonic of G — so it can't disambiguate the very pair it was meant to, and on
+  // Oasis it actively reinforced the wrong key. Reverted.)
+  const ef = m => keyFit(m);
   const f0 = ef(n0);
   let best = n0, bestF = f0;
   for (let m = 1; m <= 12; m++) {
@@ -739,11 +731,6 @@ function analyzeChroma(dt) {
     const ck = chordCur.root + ":" + chordCur.qual;
     chordTime[ck] = (chordTime[ck] || 0) + dt;
   }
-  // Leaky bass-note tally (same memory) → which pitch class the bass dwells on.
-  // The bass mostly carries the tonic, so its peak breaks fifth ambiguity.
-  for (const k in bassTime) bassTime[k] *= decay;
-  if (fr.bass >= 0) bassTime[fr.bass] = (bassTime[fr.bass] || 0) + dt;
-
   if (debugEl) renderDebug(key, favNum, corr, mode, fr.bass);
 }
 
@@ -927,7 +914,6 @@ function resetDetection() {
   chordCandMs = 0;
   chordHist = [];
   chordTime = {};
-  bassTime = {};
   chordSeq = [];
   loopSeen = false;
   lastFav = null;
