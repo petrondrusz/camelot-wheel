@@ -1,7 +1,7 @@
 {
-  "name": "Camelot kolo \u00b7 kytarov\u00fd tah\u00e1k",
+  "name": "Camelot Wheel \u00b7 guitar cheat sheet",
   "short_name": "Camelot",
-  "description": "Interaktivn\u00ed Camelot kolo pro kytaristy",
+  "description": "Interactive Camelot wheel for guitarists",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0D0D12",

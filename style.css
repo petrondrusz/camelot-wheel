@@ -12,6 +12,7 @@
   --green: #0AE448;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   color-scheme: dark;
 }
 
@@ -97,6 +98,35 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+#wheel .hub-mic-rms,
+#wheel .hub-mic-breath {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Live layer — scales with the real input level (RMS), in tune with the
+   button's sonar so the icon visibly reacts to the music it's analysing. */
+#wheel .hub-mic-rms {
+  transform: scale(calc(1 + var(--rms, 0) * 0.16));
+  transition: transform 80ms ease-out;
+}
+
+/* Baseline "breathing" so it reads as alive even in silence. */
+#wheel #hub-mic.active .hub-mic-breath {
+  animation: hub-mic-breath 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes hub-mic-breath {
+  0%, 100% { transform: scale(0.97); opacity: 0.82; }
+  50%      { transform: scale(1.03); opacity: 1; }
+}
+
+/* Opacity-only variant for reduced motion (defined globally, used below). */
+@keyframes hub-mic-breath-rm {
+  0%, 100% { opacity: 0.72; }
+  50%      { opacity: 1; }
+}
+
 .chips {
   display: flex;
   gap: 8px;
@@ -157,27 +187,74 @@ body {
   transition: transform 320ms var(--ease-back);
 }
 
-.rules {
+.mic-wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 6px;
+  align-items: center;
+  gap: 10px;
 }
 
-.rules p {
-  font-size: 15px;
+.mic {
+  position: relative;
+  appearance: none;
+  border: none;
+  width: 100%;
+  height: 64px;
+  border-radius: 999px;
+  background: linear-gradient(94deg, var(--orange) 0%, var(--pink) 100%);
+  color: #1C0A05;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 120ms var(--ease-out);
+  --rms: 0;
+}
+
+.mic:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.mic:active { transform: scale(0.98); }
+
+.mic-icon {
+  position: relative;
+  z-index: 1;
+}
+
+.sonar {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px rgba(251, 100, 182, 0.6);
+  opacity: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.mic.listening .sonar { animation: sonar 1.8s var(--ease-out) infinite; }
+.mic.listening .sonar:nth-of-type(2) { animation-delay: 0.9s; }
+.mic.listening { transform: scale(calc(1 + 0.04 * var(--rms))); }
+
+@keyframes sonar {
+  0% { transform: scale(1); opacity: calc(0.12 + 0.45 * var(--rms)); }
+  100% { transform: scale(calc(1.25 + 0.55 * var(--rms))); opacity: 0; }
+}
+
+.mic-status {
+  min-height: 1.2em;
+  font-size: 14px;
   color: var(--faint);
-}
-
-.rules .k {
-  display: inline-block;
-  min-width: 42px;
-  font-weight: 600;
-  color: var(--muted);
+  text-align: center;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .head, .compat, .fret-card, .rules {
+  .head, .compat, .fret-card, .mic-wrap {
     opacity: 0;
     transform: translateY(18px);
     animation: rise 480ms var(--ease-back) forwards;
@@ -188,7 +265,7 @@ body {
   }
   .compat { animation-delay: 120ms; }
   .fret-card { animation-delay: 180ms; }
-  .rules { animation-delay: 240ms; }
+  .mic-wrap { animation-delay: 240ms; }
 }
 
 @keyframes rise {
@@ -204,4 +281,8 @@ body {
   #wheel g.seg, #wheel g.seg path, .chip, #fret g.dot { transition: none; animation: none; }
   #wheel .hub-text.pop { animation: none; }
   .chip { animation: none; }
+  .mic.listening .sonar { animation: none; opacity: 0; }
+  .mic.listening { transform: none; }
+  #wheel .hub-mic-rms { transform: none; transition: none; }
+  #wheel #hub-mic.active .hub-mic-breath { animation: hub-mic-breath-rm 2.4s ease-in-out infinite; }
 }

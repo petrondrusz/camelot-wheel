@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Camelot kolo · kytarový tahák</title>
-<meta name="description" content="Interaktivní Camelot kolo pro kytaristy — tóniny, kompatibilní přechody a poloha základního tónu na hmatníku.">
+<title>Camelot Wheel · guitar cheat sheet</title>
+<meta name="description" content="Interactive Camelot wheel for guitarists — keys, compatible transitions and the root-note position on the fretboard.">
 <meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -22,29 +22,36 @@
     <h1>Camelot<span class="grad">Wheel</span></h1>
   </header>
 
-  <section class="wheel-wrap" aria-label="Camelot kolo">
-    <svg id="wheel" viewBox="4 4 392 392" role="application" aria-label="Camelot kolo — výběr tóniny">
-      <title>Camelot kolo</title>
-      <desc>Dvanáct výsečí ve dvou prstencích. Vnější prstenec B jsou durové tóniny, vnitřní prstenec A mollové. Klepnutím se vybere tónina.</desc>
+  <section class="wheel-wrap" aria-label="Camelot wheel">
+    <svg id="wheel" viewBox="4 4 392 392" role="application" aria-label="Camelot wheel — key selector">
+      <title>Camelot wheel</title>
+      <desc>Twelve segments in two rings. The outer B ring holds major keys, the inner A ring minor keys. Tap to select a key.</desc>
     </svg>
   </section>
 
-  <section class="compat" aria-label="Kompatibilní tóniny">
-    <div id="chips" class="chips" role="group" aria-label="Kompatibilní tóniny pro mix"></div>
+  <section class="compat" aria-label="Compatible keys">
+    <div id="chips" class="chips" role="group" aria-label="Compatible keys for mixing"></div>
   </section>
 
-  <section class="fret-card" aria-label="Poloha na hmatníku">
-    <svg id="fret" viewBox="0 0 360 130" role="img" aria-label="Hmatník — poloha základního tónu na strunách E a A">
-      <title>Hmatník</title>
-      <desc>Spodní struny E a A se zvýrazněným základním tónem vybrané tóniny.</desc>
+  <section class="fret-card" aria-label="Fretboard position">
+    <svg id="fret" viewBox="0 0 360 130" role="img" aria-label="Fretboard — root-note position on the E and A strings">
+      <title>Fretboard</title>
+      <desc>The low E and A strings with the root note of the selected key highlighted.</desc>
     </svg>
   </section>
 
-  <footer class="rules">
-    <p><span class="k">±1</span> stejné písmeno — sousední kvinta</p>
-    <p><span class="k">A↔B</span> stejné číslo — relativní dur a moll</p>
-    <p><span class="k">=</span> stejný kód — stejná tónina</p>
-  </footer>
+  <div class="mic-wrap">
+    <button id="mic" class="mic" type="button" aria-pressed="false" aria-label="Detect key from microphone — tap to start, tap again to stop">
+      <span class="sonar"></span>
+      <span class="sonar"></span>
+      <svg class="mic-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <rect x="9" y="2" width="6" height="11" rx="3" fill="currentColor"/>
+        <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M12 18v3M8.5 21h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <p id="mic-status" class="mic-status" role="status" aria-live="polite"></p>
+  </div>
 </main>
 <script src="app.js"></script>
 </body>
