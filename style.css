@@ -118,26 +118,22 @@ body {
   transition: filter 320ms var(--ease-out);
 }
 
-/* Spin speed (--spin-dur) reflects how close we are to locking. */
+/* Spinner — speed (--spin-dur) reflects how close we are to locking. */
 #wheel #hub-ring.searching {
   animation: hub-spin var(--spin-dur, 1.4s) linear infinite, hub-dash 1.4s ease-in-out infinite;
 }
 
-/* Locked but moderate confidence → orange→pink button gradient. */
-#wheel #hub-ring.confident {
+/* Locked → full border drawn once, then held. */
+#wheel #hub-ring.locked {
   animation: hub-draw 520ms var(--ease-out) both;
   filter: drop-shadow(0 0 6px rgba(251, 100, 182, 0.5));
 }
 
-/* Highest confidence → green (major) / purple (minor), by the progression. */
-#wheel #hub-ring.sure.maj {
-  stroke: url(#durGrad);
-  filter: drop-shadow(0 0 8px rgba(10, 228, 72, 0.55));
-}
-#wheel #hub-ring.sure.min {
-  stroke: url(#mollGrad);
-  filter: drop-shadow(0 0 8px rgba(157, 140, 255, 0.6));
-}
+/* Colour follows mode (green major / purple minor) — for spinner and border. */
+#wheel #hub-ring.maj { stroke: url(#durGrad); }
+#wheel #hub-ring.min { stroke: url(#mollGrad); }
+#wheel #hub-ring.locked.maj { filter: drop-shadow(0 0 8px rgba(10, 228, 72, 0.55)); }
+#wheel #hub-ring.locked.min { filter: drop-shadow(0 0 8px rgba(157, 140, 255, 0.6)); }
 
 @keyframes hub-spin {
   to { transform: rotate(360deg); }
@@ -409,7 +405,7 @@ body {
   #wheel g.seg.detected { animation: none; opacity: 1; } /* steady, no flashing */
   .chord.cur { animation: none; }
   #wheel #hub-ring.searching { animation: none; stroke-dasharray: 7 26; opacity: 0.6; }
-  #wheel #hub-ring.confident { animation: none; stroke-dasharray: none; }
+  #wheel #hub-ring.locked { animation: none; stroke-dasharray: none; }
   #wheel .hub-mic-rms { transform: none; transition: none; }
   #wheel #hub-mic.active .hub-mic-breath { animation: hub-mic-breath-rm 2.4s ease-in-out infinite; }
 }

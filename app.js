@@ -298,7 +298,7 @@ const KEY_TAU = 18;        // celková tónina — pomalý, stabilní integráto
 const KEY_TAU_FAST = 4;    // při detekované změně písně přeladit rychle [s]
 const CHANGE_MS = 4000;    // jak dlouho musí krátkodobý odhad odporovat, než přeladí
 const MIN_SPIN_MS = 15000; // spinner se točí aspoň 15 s, než se vůbec zamkne
-const CONF_SURE = 0.68;    // „největší jistota" → zelený/fialový border dle dur/moll
+const CONF_SURE = 0.68;    // horní mez pro škálu rychlosti spinneru (progress)
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const SILENCE_DB = -85;    // pod tím je ticho (mic ikona, analýza neběží)
 const WEAK_DB = -68;       // vyhlazená úroveň pod tímhle = slabý signál → varování
@@ -331,6 +331,7 @@ let analyzedMs = 0;     // accumulated time of actual (non-silent) analysis
 let disagreeMs = 0;     // how long the short-term key has fought the settled one
 let levelDb = null;     // smoothed peak level → stable weak-signal hint
 let weakWarn = false;   // current weak-signal warning state (hysteresis)
+let silenceMs = 0;      // run of silence → auto-restart on a pause
 let chordChroma = null; // short EMA → chord detection
 let chordCur = null;    // committed chord { root, qual }
 let chordCand = null;   // candidate chord being timed before commit
@@ -341,7 +342,7 @@ let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
 let hubCode = null, hubName = null, hubMic = null, hubRing = null;
-let ringKey = "off";   // "off" | "searching" | "confident" | "sure:maj" | "sure:min"
+let ringKey = "off";   // "<state>:<mode>" e.g. "off:" | "searching:" | "locked:maj"
 let lastSpinDur = "";
 let micBtn = null, micStatusEl = null, appEl = null, chordStripEl = null;
 
@@ -460,20 +461,19 @@ function popHub() {
   }
 }
 
-// Confidence ring. Tiers: off | searching (spinner) | confident (orange→pink
-// border) | sure (green/purple border by mode). Only flips on a real change so
-// the CSS animation isn't restarted.
+// Confidence ring. States: off | searching (spinner) | locked (full border).
+// Colour follows the mode: green (major) / purple (minor); orange→pink only
+// before the progression has decided. Only flips on a real change so the CSS
+// animation isn't restarted.
 function setRing(state, mode) {
-  const k = state === "sure" ? "sure:" + mode : state;
+  const k = state + ":" + (mode || "");
   if (!hubRing || ringKey === k) return;
   ringKey = k;
-  const sure = state === "sure";
   hubRing.style.display = state === "off" ? "none" : "";
   hubRing.classList.toggle("searching", state === "searching");
-  hubRing.classList.toggle("confident", state === "confident" || sure);
-  hubRing.classList.toggle("sure", sure);
-  hubRing.classList.toggle("maj", sure && mode === "maj");
-  hubRing.classList.toggle("min", sure && mode === "min");
+  hubRing.classList.toggle("locked", state === "locked");
+  hubRing.classList.toggle("maj", mode === "maj");
+  hubRing.classList.toggle("min", mode === "min");
 }
 
 // Spinner speed reflects progress toward locking (slow → fast). Progress is
@@ -502,30 +502,37 @@ function showHubMic(on) {
 // Live favorite — always shown while there's sound. Confidence (>= CONF)
 // only controls the visual certainty (dim = still settling) and the
 // release-lock; it must NOT gate the live display, or the key never shows.
-function setHub(fav, corr, minor) {
+function setHub(fav, corr, minor, changing) {
   showHubMic(false);
-  const tentative = corr < CONF;
-  if (fav !== lastFav) { lastFav = fav; if (!tentative) popHub(); }
-  hubCode.textContent = String(fav);
-  hubName.textContent = DATA[fav].A[0] + " / " + DATA[fav].B[0];
-  hubCode.style.opacity = tentative ? "0.4" : "1";
-  hubName.style.opacity = tentative ? "0.4" : "1";
+  const pmode = progressionMode(fav);            // null until enough chords
+  const mode = pmode || (minor ? "min" : "maj"); // chroma fallback
 
+  // Lock when it has spun ≥ MIN_SPIN_MS, is confident, and no change is underway.
+  const wasLocked = ringKey.startsWith("locked");
+  const locked = !changing && analyzedMs >= MIN_SPIN_MS &&
+                 corr >= (wasLocked ? CONF - 0.06 : CONF + 0.06);
+
+  const favChanged = fav !== lastFav;
+  lastFav = fav;
+  if (locked && (!wasLocked || favChanged)) popHub(); // pop on lock / key change
+  if (locked) {
+    const ring = mode === "min" ? "A" : "B";     // resolved single key (D, or Bm)
+    hubName.textContent = DATA[fav][ring][0];
+    hubCode.textContent = fav + ring;
+  } else {
+    hubName.textContent = DATA[fav].A[0] + " / " + DATA[fav].B[0];
+    hubCode.textContent = String(fav);
+  }
+  hubCode.style.opacity = locked ? "1" : "0.4";
+  hubName.style.opacity = locked ? "1" : "0.4";
+
+  // Spinner speed: progress gated by time & confidence (slow while changing).
   const timeP = Math.min(1, analyzedMs / MIN_SPIN_MS);
   const confP = Math.max(0, Math.min(1, (corr - 0.45) / (CONF_SURE - 0.45)));
-  setSpin(Math.min(timeP, confP));
-  // Must spin at least MIN_SPIN_MS before it can lock at all.
-  if (analyzedMs < MIN_SPIN_MS) { setRing("searching"); return; }
-  // Tier with hysteresis so the border doesn't flicker on the boundary.
-  const wasSure = ringKey.startsWith("sure");
-  const wasConf = ringKey === "confident" || wasSure;
-  if (corr >= CONF_SURE - (wasSure ? 0.05 : -0.05)) {
-    setRing("sure", progressionMode(fav) || (minor ? "min" : "maj"));
-  } else if (corr >= CONF - (wasConf ? 0.05 : -0.05)) {
-    setRing("confident");
-  } else {
-    setRing("searching");
-  }
+  setSpin(changing ? 0.15 : Math.min(timeP, confP));
+
+  // Ring colour follows mode; orange→pink only before the progression decides.
+  setRing(locked ? "locked" : "searching", pmode || (locked ? mode : null));
 }
 
 // Build a 12-bin chroma from the current spectrum using only local spectral
@@ -585,7 +592,14 @@ function frameChroma() {
 
 function analyzeChroma(dt) {
   const fr = frameChroma();
-  if (!fr) { lastResult = null; setSpin(0); showHubMic(true); return; }
+  if (!fr) {
+    // Sustained silence (a pause / end of song) → auto-restart the detection.
+    silenceMs += dt * 1000;
+    if (silenceMs >= 2000 && analyzedMs > 0) { resetDetection(); setRing("searching"); }
+    lastResult = null; setSpin(0); showHubMic(true);
+    return;
+  }
+  silenceMs = 0;
   const chroma = fr.chroma;
   analyzedMs += dt * 1000;
 
@@ -626,7 +640,7 @@ function analyzeChroma(dt) {
 
   lastResult = { fav: favNum, corr };
   applyHeatmap(heat.norm, favNum);     // wheel reacts to chords, key pair pulses
-  setHub(favNum, corr, mode === "min");
+  setHub(favNum, corr, key.minor, changing);
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
   const [rNote, rSemi] = DATA[favNum][mode === "min" ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
@@ -778,6 +792,28 @@ function loop() {
 
 function micStatus(msg) { micStatusEl.textContent = msg || ""; }
 
+// Reset all detection state to the "don't know yet" baseline. Used on start and
+// on an auto-restart after a pause.
+function resetDetection() {
+  emaChroma = null;
+  keyEma = null;
+  chordChroma = null;
+  analyzedMs = 0;
+  disagreeMs = 0;
+  levelDb = null;
+  weakWarn = false;
+  chordCur = null;
+  chordCand = null;
+  chordCandMs = 0;
+  chordHist = [];
+  chordTime = {};
+  lastFav = null;
+  lastResult = null;
+  lastSpinDur = "";
+  micStatus("");
+  if (chordStripEl) chordStripEl.textContent = "";
+}
+
 function startListening() {
   if (listening) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -786,24 +822,9 @@ function startListening() {
   }
   listening = true;
   lockedNum = null;
-  emaChroma = null;
-  keyEma = null;
-  analyzedMs = 0;
-  disagreeMs = 0;
-  levelDb = null;
-  weakWarn = false;
-  chordChroma = null;
-  chordCur = null;
-  chordCand = null;
-  chordCandMs = 0;
-  chordHist = [];
-  chordTime = {};
-  lastSpinDur = "";
-  if (chordStripEl) chordStripEl.textContent = "";
-  lastFav = null;
-  lastResult = null;
+  silenceMs = 0;
   lastAnalyzeT = 0;
-  micStatus("");
+  resetDetection();
   micBtn.classList.add("listening");
   micBtn.setAttribute("aria-pressed", "true");
   if (appEl) appEl.classList.add("listening"); // dim chips, light up fretboard
@@ -890,10 +911,14 @@ function renderLocked() {
   }
   lastFav = null;
   showHubMic(false);
-  // Final locked result → highlighted border in the progression's mode colour.
-  setRing("sure", progressionMode(lockedNum) || "maj");
-  hubCode.textContent = String(lockedNum);
-  hubName.textContent = DATA[lockedNum].A[0] + " / " + DATA[lockedNum].B[0];
+  // Final locked result → single resolved key + border in the mode colour.
+  const mode = progressionMode(lockedNum) || "maj";
+  const ring = mode === "min" ? "A" : "B";
+  setRing("locked", mode);
+  hubCode.style.opacity = "1";
+  hubName.style.opacity = "1";
+  hubName.textContent = DATA[lockedNum][ring][0];
+  hubCode.textContent = lockedNum + ring;
   popHub();
 }
 
