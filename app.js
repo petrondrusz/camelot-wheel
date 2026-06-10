@@ -302,7 +302,9 @@ const LOCK_FALLBACK_MS = 30000; // pokud se nenajde smyčka akordů, zamkni nejp
 const CONF_SURE = 0.68;    // horní mez pro škálu rychlosti spinneru (progress)
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const SILENCE_DB = -90;    // pod tím je ticho (mic ikona, analýza neběží)
-const WEAK_DB = -74;       // vyhlazená úroveň pod tímhle = slabý signál → varování
+const WEAK_DB = -86;       // jen těsně nad tichem: absolutní dBFS špičkového binu vychází
+                           // u fftSize 16384 nízko i pro zdravý signál (r0.66 čteme ~−85 dB),
+                           // takže „weak" smí hlásit jen signál fakt na hranici slyšitelnosti
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 const CHORD_MEM_TAU = 20;  // paměť progrese [s] — leaky, ať se nová píseň prosadí
 const SILENCE_HIDE_MS = 700; // teprve po tomhle souvislém tichu ukázat mic ikonu
