@@ -404,11 +404,15 @@ function majRoot(m) { return ((7 * (m - 8)) % 12 + 12) % 12; }
 // Perfect-fifth correction: chroma confuses a key with its dominant/subdominant
 // (adjacent Camelot numbers, a fifth apart — e.g. Db↔Ab, 6↔7). The progression
 // disambiguates: prefer the neighbour whose tonic chords (I + relative i) are
-// actually held the longest. Conservative — only overrides on a clear margin.
-function correctKey(n0) {
+// actually held the longest. Deliberately conservative so it can't break a
+// detection chroma is already sure about:
+//   • needs enough progression evidence (≥5 s of chords),
+//   • only considers a neighbour chroma finds genuinely plausible (≈ tie),
+//   • only overrides on a clear support margin (1.4×).
+function correctKey(n0, raw) {
   let total = 0;
   for (const k in chordTime) total += chordTime[k];
-  if (total < 5) return n0; // not enough progression evidence yet
+  if (total < 5) return n0;
   const support = m => {
     const r = majRoot(m);
     return (chordTime[r + ":maj"] || 0) + (chordTime[(r + 9) % 12 + ":min"] || 0);
@@ -416,6 +420,7 @@ function correctKey(n0) {
   const s0 = support(n0);
   let best = n0, bestS = s0;
   for (const m of [mod12(n0 - 1), mod12(n0 + 1)]) {
+    if (raw[m] < raw[n0] - 0.1) continue; // chroma clearly prefers n0 → don't touch it
     const s = support(m);
     if (s > bestS) { bestS = s; best = m; }
   }
@@ -611,7 +616,7 @@ function analyzeChroma(dt) {
   if (changing && key.fav === heat.fav) disagreeMs = 0; // re-locked → resume slow
 
   // Correct fifth-errors (off-by-one Camelot) using the chord progression.
-  const favNum = correctKey(key.fav);
+  const favNum = correctKey(key.fav, key.raw);
   const corr = key.raw[favNum];
   const mode = progressionMode(favNum) || (key.minor ? "min" : "maj");
 
