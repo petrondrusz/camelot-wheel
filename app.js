@@ -302,9 +302,12 @@ const LOCK_FALLBACK_MS = 30000; // pokud se nenajde smyčka akordů, zamkni nejp
 const CONF_SURE = 0.68;    // horní mez pro škálu rychlosti spinneru (progress)
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const SILENCE_DB = -90;    // pod tím je ticho (mic ikona, analýza neběží)
-const WEAK_DB = -86;       // jen těsně nad tichem: absolutní dBFS špičkového binu vychází
-                           // u fftSize 16384 nízko i pro zdravý signál (r0.66 čteme ~−85 dB),
-                           // takže „weak" smí hlásit jen signál fakt na hranici slyšitelnosti
+const WEAK_DB = -90;       // jen úroveň U SAMÉHO PRAHU TICHA = slabý signál. Absolutní dBFS
+                           // špičkového binu vychází u fftSize 16384 nízko i pro skvělý signál
+                           // (r0.76 čteme kolem −84 dB), takže „weak" smí hlásit jen signál,
+                           // co se vyhlazenou úrovní drží na dně. Hystereze úzká (REC 4 dB),
+                           // ať se nezasekne zapnutá v normálním pracovním rozsahu (−80 až −85).
+const WEAK_REC = 4;        // o kolik dB nad WEAK_DB musí úroveň vystoupat, než „weak" zhasne
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 const CHORD_MEM_TAU = 20;  // paměť progrese [s] — leaky, ať se nová píseň prosadí
 const SILENCE_HIDE_MS = 700; // teprve po tomhle souvislém tichu ukázat mic ikonu
@@ -646,7 +649,7 @@ function analyzeChroma(dt) {
   // Weak-signal hint from a smoothed level with wide hysteresis (no blinking).
   const aL = Math.exp(-dt / 0.8);
   levelDb = levelDb === null ? fr.db : levelDb * aL + fr.db * (1 - aL);
-  if (weakWarn ? levelDb > WEAK_DB + 9 : levelDb < WEAK_DB) weakWarn = !weakWarn;
+  if (weakWarn ? levelDb > WEAK_DB + WEAK_REC : levelDb < WEAK_DB) weakWarn = !weakWarn;
   micStatus(weakWarn ? "Sound signal is weak" : "");
 
   // Short EMA (~3 s) → responsive heatmap (current chords).
