@@ -761,8 +761,12 @@ function detectChord(ch, bass, triads) {
     if (bass === root) score += BASS_BONUS;             // bass = root → strong confirm
     else if (bass === (root + 7) % 12) score += BASS_BONUS * 0.4; // bass = fifth
     // Blue-note bias: a natural 3rd present alongside the minor 3rd → a major /
-    // dominant (blues) chord coloured by a b3, not a true minor chord.
-    if (q === "min") score -= BLUE_BIAS * ch[(root + 4) % 12];
+    // dominant (blues) chord coloured by a b3, not a true minor chord. Penalise
+    // a minor candidate only by how much its MAJOR 3rd EXCEEDS its minor 3rd —
+    // so a genuine minor chord (b3 dominant, ♮3 only bleeding in from harmonics
+    // or neighbour chords) stays minor, while a real blues major (both thirds
+    // present, ♮3 leading) still flips to major. Avoids mis-calling Bm/C#m etc.
+    if (q === "min") score -= BLUE_BIAS * Math.max(0, ch[(root + 4) % 12] - ch[(root + 3) % 12]);
     if (score > b1) { b2 = b1; b1 = score; best = [root, q]; }
     else if (score > b2) b2 = score;
   }
