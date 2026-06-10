@@ -314,6 +314,7 @@ const CHORD_HOLD_MS = 320; // jak dlouho musí kandidát vydržet, než se zapí
 const BASS_BONUS = 0.2;    // bonus, když nejnižší tón = root akordu (kotví na bas)
 const MAX_CHORDS = 4;      // kolik akordů držet v progression stripu
 const MAJ_T = [0, 4, 7], MIN_T = [0, 3, 7];
+const ALL_TRIADS = (() => { const a = []; for (let r = 0; r < 12; r++) a.push([r, "maj"], [r, "min"]); return a; })();
 const SHARP = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const FLAT  = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
 const SHARP_KEYS = new Set([0, 7, 2, 9, 4, 11]); // C,G,D,A,E,B major → use sharps
@@ -419,26 +420,12 @@ function diatonicTriads(m) {
   ];
 }
 
-// Candidate chord templates for detection: union of the diatonic triads of a
-// key and its two fifth-neighbours, so the *discriminating* chords (e.g. Bb-maj
-// for Eb vs Bb-min for Ab) can actually be heard and used to pick the key.
-function candidateTriads(n0) {
-  const seen = {}, out = [];
-  for (const m of [mod12(n0 - 1), n0, mod12(n0 + 1)]) {
-    for (const [root, q] of diatonicTriads(m)) {
-      const k = root + ":" + q;
-      if (!seen[k]) { seen[k] = 1; out.push([root, q]); }
-    }
-  }
-  return out;
-}
-
-// Perfect-fifth correction: chroma confuses a key with its dominant/subdominant
-// (adjacent Camelot numbers — Db↔Ab, 5↔4) because they share 6 of 7 notes. But
-// their diatonic CHORDS differ in quality, so score each candidate by how much
-// the played progression fits its diatonic triads (quality-aware), and pick the
-// best fit. Conservative: needs ≥5 s of chords, a chroma-plausible neighbour,
-// and a clear fit margin — so it won't break a detection chroma is sure about.
+// Chord-progression key finder. Chroma confuses keys that share notes — not
+// just fifth-neighbours (Db↔Ab) but also more distant ones. Their diatonic
+// CHORDS differ, though, so score how much the (unconstrained) progression fits
+// each key's diatonic triads (quality-aware) and pick the best fit GLOBALLY,
+// across all 12 keys. Chroma stays a sanity gate so we never jump to a key it
+// finds implausible; needs ≥5 s of chords and a clear fit margin to override.
 function keyFit(m) {
   let s = 0;
   for (const [root, q, w] of diatonicTriads(m)) s += (chordTime[root + ":" + q] || 0) * w;
@@ -450,12 +437,12 @@ function correctKey(n0, raw) {
   if (total < 5) return n0;
   const f0 = keyFit(n0);
   let best = n0, bestF = f0;
-  for (const m of [mod12(n0 - 1), mod12(n0 + 1)]) {
-    if (raw[m] < raw[n0] - 0.1) continue; // chroma clearly prefers n0 → don't touch it
+  for (let m = 1; m <= 12; m++) {
+    if (m === n0 || raw[m] < raw[n0] - 0.12) continue; // chroma must find it plausible
     const f = keyFit(m);
     if (f > bestF) { bestF = f; best = m; }
   }
-  return (best !== n0 && bestF > f0 * 1.15) ? best : n0;
+  return (best !== n0 && bestF > f0 * 1.2) ? best : n0;
 }
 
 // Živá heatmapa — obě výseče páru (A i B) podle skóre svého čísla.
@@ -677,13 +664,13 @@ function analyzeChroma(dt) {
   const [rNote, rSemi] = DATA[favNum][mode === "min" ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
 
-  // Live chords — short window. Detected over the union of the chroma key and its
-  // fifth-neighbours so discriminating chords get heard; that same tally drives
-  // the fifth-correction above.
+  // Live chords — short window, detected UNCONSTRAINED (any of the 24 triads,
+  // bass-anchored) so the true key's chords are heard even when chroma is off;
+  // the debounce keeps the strip clean and this tally drives the key finder.
   const aC = Math.exp(-dt / CHORD_TAU);
   if (!chordChroma) chordChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) chordChroma[i] = chordChroma[i] * aC + chroma[i] * (1 - aC);
-  updateChord(chordChroma, fr.bass, candidateTriads(key.fav), favNum, dt);
+  updateChord(chordChroma, fr.bass, ALL_TRIADS, favNum, dt);
   // Leaky tally of time per chord → major/minor and fifth-correction from the
   // progression. Decays so a new song's chords overcome the previous one's.
   const decay = Math.exp(-dt / CHORD_MEM_TAU);
