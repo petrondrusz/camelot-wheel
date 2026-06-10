@@ -298,13 +298,14 @@ const KEY_TAU = 18;        // celková tónina — pomalý, stabilní integráto
 const KEY_TAU_FAST = 4;    // při detekované změně písně přeladit rychle [s]
 const CHANGE_MS = 4000;    // jak dlouho musí krátkodobý odhad odporovat, než přeladí
 const MIN_SPIN_MS = 15000; // spinner se točí aspoň 15 s, než se vůbec zamkne
+const LOCK_FALLBACK_MS = 30000; // pokud se nenajde smyčka akordů, zamkni nejpozději tady
 const CONF_SURE = 0.68;    // horní mez pro škálu rychlosti spinneru (progress)
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
-const SILENCE_DB = -85;    // pod tím je ticho (mic ikona, analýza neběží)
+const SILENCE_DB = -90;    // pod tím je ticho (mic ikona, analýza neběží)
 const WEAK_DB = -74;       // vyhlazená úroveň pod tímhle = slabý signál → varování
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 const CHORD_MEM_TAU = 20;  // paměť progrese [s] — leaky, ať se nová píseň prosadí
-const SILENCE_HIDE_MS = 450; // teprve po tomhle souvislém tichu ukázat mic ikonu
+const SILENCE_HIDE_MS = 700; // teprve po tomhle souvislém tichu ukázat mic ikonu
 
 // Živá detekce akordů (omezená na diatoniku detekované tóniny → vyšší přesnost)
 const CHORD_TAU = 0.45;    // krátké okno pro akord [s]
@@ -312,6 +313,7 @@ const CHORD_MIN = 0.55;    // min. shoda se šablonou akordu
 const CHORD_MARGIN = 0.04; // min. náskok favorita nad druhým
 const CHORD_HOLD_MS = 320; // jak dlouho musí kandidát vydržet, než se zapíše
 const BASS_BONUS = 0.2;    // bonus, když nejnižší tón = root akordu (kotví na bas)
+const BLUE_BIAS = 0.3;     // moll skóre dolů, je-li přítomná i velká tercie (blues b3)
 const MAX_CHORDS = 4;      // kolik akordů držet v progression stripu
 const MAJ_T = [0, 4, 7], MIN_T = [0, 3, 7];
 const ALL_TRIADS = (() => { const a = []; for (let r = 0; r < 12; r++) a.push([r, "maj"], [r, "min"]); return a; })();
@@ -340,6 +342,8 @@ let chordCand = null;   // candidate chord being timed before commit
 let chordCandMs = 0;
 let chordHist = [];     // recent committed chords [{ name, qual }]
 let chordTime = {};     // accumulated seconds per chord ("root:qual") → mode from progression
+let chordSeq = [];      // recent committed chord keys → loop/cycle detection
+let loopSeen = false;   // the progression has returned to an earlier chord (a loop)
 let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
@@ -523,9 +527,12 @@ function setHub(fav, corr, minor, changing) {
   const pmode = progressionMode(fav);            // null until enough chords
   const mode = pmode || (minor ? "min" : "maj"); // chroma fallback
 
-  // Lock when it has spun ≥ MIN_SPIN_MS, is confident, and no change is underway.
+  // Lock when it has spun ≥ MIN_SPIN_MS, is confident, no change is underway,
+  // AND the progression has shown a loop (or a longer fallback elapsed) — so it
+  // hears the chords cycle before committing rather than snapping early.
   const wasLocked = ringKey.startsWith("locked");
-  const locked = !changing && analyzedMs >= MIN_SPIN_MS &&
+  const progressed = loopSeen || analyzedMs >= LOCK_FALLBACK_MS;
+  const locked = !changing && analyzedMs >= MIN_SPIN_MS && progressed &&
                  corr >= (wasLocked ? CONF - 0.06 : CONF + 0.06);
 
   const favChanged = fav !== lastFav;
@@ -613,9 +620,13 @@ function analyzeChroma(dt) {
     // NOT flip the locked key to the mic icon. Only react to a real gap.
     silenceMs += dt * 1000;
     if (silenceMs > SILENCE_HIDE_MS) {
-      lastResult = null; setSpin(0); showHubMic(true);
+      setSpin(0);
       // Sustained silence (a pause / end of song) → auto-restart the detection.
-      if (silenceMs >= 2000 && analyzedMs > 0) { resetDetection(); setRing("searching"); }
+      if (silenceMs >= 2000 && analyzedMs > 0) {
+        resetDetection(); setRing("searching"); lastResult = null; showHubMic(true);
+      } else if (!ringKey.startsWith("locked")) {
+        lastResult = null; showHubMic(true);   // searching + gap → mic icon
+      }                                         // locked + short gap → keep the key shown
       if (debugEl) debugEl.textContent = "silence " + (silenceMs / 1000).toFixed(1) + "s" +
         (silenceMs >= 2000 ? " — restarted" : "");
     }
@@ -701,7 +712,7 @@ function renderDebug(key, favNum, corr, mode, bass) {
     "mode  " + mode + "    chord " + (chordCur ? chordName(chordCur.root, chordCur.qual, favNum) : "—") +
       "    bass " + (bass >= 0 ? SHARP[bass] : "—") + "\n" +
     "lvl   " + (levelDb == null ? "—" : levelDb.toFixed(0) + "dB") + (weakWarn ? " WEAK" : " ok") +
-      "    t " + (analyzedMs / 1000).toFixed(1) + "s\n" +
+      "    t " + (analyzedMs / 1000).toFixed(1) + "s    loop " + (loopSeen ? "Y" : "N") + "\n" +
     "ring  " + ringKey;
 }
 
@@ -739,6 +750,9 @@ function detectChord(ch, bass, triads) {
     let score = dot / (Math.sqrt(3) * cn);              // cosine vs binary triad template
     if (bass === root) score += BASS_BONUS;             // bass = root → strong confirm
     else if (bass === (root + 7) % 12) score += BASS_BONUS * 0.4; // bass = fifth
+    // Blue-note bias: a natural 3rd present alongside the minor 3rd → a major /
+    // dominant (blues) chord coloured by a b3, not a true minor chord.
+    if (q === "min") score -= BLUE_BIAS * ch[(root + 4) % 12];
     if (score > b1) { b2 = b1; b1 = score; best = [root, q]; }
     else if (score > b2) b2 = score;
   }
@@ -762,6 +776,10 @@ function updateChord(ch, bass, triads, keyNum, dt) {
   if (chordCand && chordCand.root === det.root && chordCand.qual === det.qual) chordCandMs += dt * 1000;
   else { chordCand = det; chordCandMs = 0; }
   if (chordCandMs >= CHORD_HOLD_MS) {
+    const ck = det.root + ":" + det.qual;
+    if (chordSeq.includes(ck)) loopSeen = true; // progression returned → a loop
+    chordSeq.push(ck);
+    if (chordSeq.length > 8) chordSeq.shift();
     chordCur = { root: det.root, qual: det.qual };
     chordCand = null; chordCandMs = 0;
     chordHist.push({ name: chordName(det.root, det.qual, keyNum), qual: det.qual });
@@ -855,6 +873,8 @@ function resetDetection() {
   chordCandMs = 0;
   chordHist = [];
   chordTime = {};
+  chordSeq = [];
+  loopSeen = false;
   lastFav = null;
   lastResult = null;
   lastSpinDur = "";
