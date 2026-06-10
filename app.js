@@ -292,6 +292,18 @@ const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const MIN_PEAK_DB = -72;   // pod tím bereme jako ticho
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 
+// Živá detekce akordů (omezená na diatoniku detekované tóniny → vyšší přesnost)
+const CHORD_TAU = 0.45;    // krátké okno pro akord [s]
+const CHORD_MIN = 0.55;    // min. shoda se šablonou akordu
+const CHORD_MARGIN = 0.04; // min. náskok favorita nad druhým
+const CHORD_HOLD_MS = 320; // jak dlouho musí kandidát vydržet, než se zapíše
+const BASS_BONUS = 0.12;   // bonus, když nejnižší tón = root akordu
+const MAX_CHORDS = 4;      // kolik akordů držet v progression stripu
+const MAJ_T = [0, 4, 7], MIN_T = [0, 3, 7];
+const SHARP = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+const FLAT  = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
+const SHARP_KEYS = new Set([0, 7, 2, 9, 4, 11]); // C,G,D,A,E,B major → use sharps
+
 let audioCtx = null;
 let analyser = null;
 let micStream = null;
@@ -304,11 +316,16 @@ let emaChroma = null;   // short EMA → heatmap
 let keyEma = null;      // long leaky integrator → overall key
 let keyFrames = 0;      // analysed frames since start (for the fast warmup lock)
 let disagreeMs = 0;     // how long the short-term key has fought the settled one
+let chordChroma = null; // short EMA → chord detection
+let chordCur = null;    // committed chord { root, qual }
+let chordCand = null;   // candidate chord being timed before commit
+let chordCandMs = 0;
+let chordHist = [];     // recent committed chords [{ name, qual }]
 let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
 let hubCode = null, hubName = null, hubMic = null;
-let micBtn = null, micStatusEl = null, appEl = null;
+let micBtn = null, micStatusEl = null, appEl = null, chordStripEl = null;
 
 // Button analyzer — symmetric volume bars left/right of the icon.
 const N_BARS = 5;
@@ -450,6 +467,21 @@ function frameChroma() {
     chroma[pc] += Math.sqrt(mag) * wf;             // sqrt tames drums/bass
   }
 
+  // Bass root: strongest peak in 55–260 Hz → likely the chord's root note.
+  let bass = -1, bMax = -Infinity;
+  const bLo = Math.max(2, Math.floor(55 / binHz));
+  const bHi = Math.min(n - 2, Math.ceil(260 / binHz));
+  for (let i = bLo; i <= bHi; i++) {
+    const db = freqBuf[i];
+    if (db < freqBuf[i - 1] || db < freqBuf[i + 1]) continue;
+    if (db > bMax) {
+      bMax = db;
+      const f = i * binHz;
+      bass = ((Math.round(12 * Math.log2(f / 440) + 69) % 12) + 12) % 12;
+    }
+  }
+  if (bMax < MIN_PEAK_DB) bass = -1;
+
   let sum = 0, mx = 0;
   for (let i = 0; i < 12; i++) { sum += chroma[i]; if (chroma[i] > mx) mx = chroma[i]; }
   if (mx <= 0) return null;
@@ -458,7 +490,7 @@ function frameChroma() {
   const crest = mx / (sum / 12);
   const w = Math.min(1, Math.max(0.2, (crest - 2) / 3.5));
   for (let i = 0; i < 12; i++) chroma[i] /= mx;
-  return { chroma, w };
+  return { chroma, w, bass };
 }
 
 function analyzeChroma(dt) {
@@ -498,6 +530,80 @@ function analyzeChroma(dt) {
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
   const [rNote, rSemi] = DATA[key.fav][key.minor ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
+
+  // Live chords — short window, constrained to the key's diatonic triads.
+  const aC = Math.exp(-dt / CHORD_TAU);
+  if (!chordChroma) chordChroma = Array.from(chroma);
+  else for (let i = 0; i < 12; i++) chordChroma[i] = chordChroma[i] * aC + chroma[i] * (1 - aC);
+  updateChord(chordChroma, fr.bass, key.fav, dt);
+}
+
+// Best-matching chord among the six diatonic triads of the key's major scale.
+// The scale degree fixes each root's quality, so we don't need to read the
+// (often weak) third — the key does the disambiguation for us.
+function detectChord(ch, bass, keyNum) {
+  const r = ((7 * (keyNum - 8)) % 12 + 12) % 12; // major tonic of this Camelot number
+  const cands = [
+    [r, "maj"], [(r + 2) % 12, "min"], [(r + 4) % 12, "min"],
+    [(r + 5) % 12, "maj"], [(r + 7) % 12, "maj"], [(r + 9) % 12, "min"]
+  ];
+  let cn = 0;
+  for (let i = 0; i < 12; i++) cn += ch[i] * ch[i];
+  cn = Math.sqrt(cn) + 1e-9;
+  let best = null, b1 = -1, b2 = -1;
+  for (const [root, q] of cands) {
+    const t = q === "maj" ? MAJ_T : MIN_T;
+    let dot = 0;
+    for (const off of t) dot += ch[(root + off) % 12];
+    let score = dot / (Math.sqrt(3) * cn);   // cosine vs binary triad template
+    if (bass === root) score += BASS_BONUS;  // bass note confirms the root
+    if (score > b1) { b2 = b1; b1 = score; best = [root, q]; }
+    else if (score > b2) b2 = score;
+  }
+  return { root: best[0], qual: best[1], score: b1, margin: b1 - b2 };
+}
+
+function chordName(root, qual, keyNum) {
+  const r = ((7 * (keyNum - 8)) % 12 + 12) % 12;
+  const nm = (SHARP_KEYS.has(r) ? SHARP : FLAT)[root];
+  return qual === "min" ? nm + "m" : nm;
+}
+
+// Commit a new chord only after it has persisted (debounce) → stable strip.
+function updateChord(ch, bass, keyNum, dt) {
+  const det = detectChord(ch, bass, keyNum);
+  if (det.score < CHORD_MIN || det.margin < CHORD_MARGIN) return; // unsure → hold last
+  if (chordCur && chordCur.root === det.root && chordCur.qual === det.qual) {
+    chordCand = null; chordCandMs = 0;
+    return;
+  }
+  if (chordCand && chordCand.root === det.root && chordCand.qual === det.qual) chordCandMs += dt * 1000;
+  else { chordCand = det; chordCandMs = 0; }
+  if (chordCandMs >= CHORD_HOLD_MS) {
+    chordCur = { root: det.root, qual: det.qual };
+    chordCand = null; chordCandMs = 0;
+    chordHist.push({ name: chordName(det.root, det.qual, keyNum), qual: det.qual });
+    if (chordHist.length > MAX_CHORDS) chordHist.shift();
+    renderChordStrip();
+  }
+}
+
+function renderChordStrip() {
+  if (!chordStripEl) return;
+  chordStripEl.textContent = "";
+  chordHist.forEach((c, idx) => {
+    if (idx > 0) {
+      const sep = document.createElement("span");
+      sep.className = "chord-sep";
+      sep.textContent = "→";
+      chordStripEl.append(sep);
+    }
+    const span = document.createElement("span");
+    const isCur = idx === chordHist.length - 1;
+    span.className = "chord " + (c.qual === "min" ? "min" : "maj") + (isCur ? " cur" : "");
+    span.textContent = c.name;
+    chordStripEl.append(span);
+  });
 }
 
 // Live volume meter in the button — per-band level with fast attack / slow
@@ -564,6 +670,12 @@ function startListening() {
   keyEma = null;
   keyFrames = 0;
   disagreeMs = 0;
+  chordChroma = null;
+  chordCur = null;
+  chordCand = null;
+  chordCandMs = 0;
+  chordHist = [];
+  if (chordStripEl) chordStripEl.textContent = "";
   lastFav = null;
   lastResult = null;
   lastAnalyzeT = 0;
@@ -664,6 +776,7 @@ function initMic() {
   hubName = document.getElementById("hub-name");
   hubMic = document.getElementById("hub-mic");
   appEl = document.querySelector(".app");
+  chordStripEl = document.getElementById("chord-strip");
 
   // barsR: center→outer maps to band 0→4. barsL is reversed so the same band
   // sits at the mirrored position on the left (bass near center, treble outside).

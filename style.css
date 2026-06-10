@@ -146,12 +146,51 @@ body {
   transition: opacity 280ms var(--ease-out), filter 280ms var(--ease-out);
 }
 
-/* While listening the chips relate to the manual selection, not the live
-   detection — push them back so focus moves to the wheel and fretboard. */
-.app.listening .chips {
-  opacity: 0.3;
-  filter: blur(1.5px);
-  pointer-events: none;
+/* While listening, the manual-selection chips are replaced by the live
+   chord progression strip. */
+.app.listening .chips { display: none; }
+
+.chord-strip {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 54px;
+  font-weight: 600;
+}
+
+.app.listening .chord-strip { display: flex; }
+
+.chord-sep { color: var(--faint); font-size: 14px; }
+
+.chord {
+  display: inline-block;
+  font-size: 16px;
+  color: var(--faint);
+  transition: opacity 200ms var(--ease-out);
+}
+
+.chord.cur { font-size: 23px; }
+
+.chord.cur.maj {
+  background: linear-gradient(120deg, #62F593, #06B838);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.chord.cur.min {
+  background: linear-gradient(120deg, #C3B0FF, #7A5BFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.chord.cur { animation: chord-in 340ms var(--ease-back); }
+
+@keyframes chord-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.92); }
+  to { opacity: 1; transform: none; }
 }
 
 .chip {
@@ -326,6 +365,7 @@ body {
   .chip { animation: none; }
   .meter i { will-change: auto; } /* bars set to a static EQ glyph from JS */
   #wheel g.seg.detected { animation: none; opacity: 1; } /* steady, no flashing */
+  .chord.cur { animation: none; }
   #wheel .hub-mic-rms { transform: none; transition: none; }
   #wheel #hub-mic.active .hub-mic-breath { animation: hub-mic-breath-rm 2.4s ease-in-out infinite; }
 }
