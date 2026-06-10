@@ -347,6 +347,7 @@ let hubCode = null, hubName = null, hubMic = null, hubRing = null;
 let ringKey = "off";   // "<state>:<mode>" e.g. "off:" | "searching:" | "locked:maj"
 let lastSpinDur = "";
 let micBtn = null, micStatusEl = null, appEl = null, chordStripEl = null;
+let debugEl = null;     // live diagnostics overlay (?debug or triple-tap title)
 
 // Button analyzer — symmetric volume bars left/right of the icon.
 const N_BARS = 5;
@@ -615,6 +616,8 @@ function analyzeChroma(dt) {
       lastResult = null; setSpin(0); showHubMic(true);
       // Sustained silence (a pause / end of song) → auto-restart the detection.
       if (silenceMs >= 2000 && analyzedMs > 0) { resetDetection(); setRing("searching"); }
+      if (debugEl) debugEl.textContent = "silence " + (silenceMs / 1000).toFixed(1) + "s" +
+        (silenceMs >= 2000 ? " — restarted" : "");
     }
     return;
   }
@@ -679,6 +682,35 @@ function analyzeChroma(dt) {
     const ck = chordCur.root + ":" + chordCur.qual;
     chordTime[ck] = (chordTime[ck] || 0) + dt;
   }
+
+  if (debugEl) renderDebug(key, favNum, corr, mode, fr.bass);
+}
+
+// Live diagnostics overlay — toggle with ?debug or a triple-tap on the title.
+function renderDebug(key, favNum, corr, mode, bass) {
+  const fits = [];
+  for (let m = 1; m <= 12; m++) fits.push([m, keyFit(m)]);
+  fits.sort((a, b) => b[1] - a[1]);
+  const top = fits.slice(0, 3).map(([m, f]) => m + ":" + f.toFixed(0)).join("  ");
+  const chromaKey = key.fav + (key.minor ? "A" : "B");
+  const finalKey = favNum + (mode === "min" ? "A" : "B");
+  debugEl.textContent =
+    "key   chroma " + chromaKey + " r" + key.corr.toFixed(2) +
+      " → " + finalKey + " r" + corr.toFixed(2) + (key.fav !== favNum ? "  ←FIX" : "") + "\n" +
+    "fit   " + top + "\n" +
+    "mode  " + mode + "    chord " + (chordCur ? chordName(chordCur.root, chordCur.qual, favNum) : "—") +
+      "    bass " + (bass >= 0 ? SHARP[bass] : "—") + "\n" +
+    "lvl   " + (levelDb == null ? "—" : levelDb.toFixed(0) + "dB") + (weakWarn ? " WEAK" : " ok") +
+      "    t " + (analyzedMs / 1000).toFixed(1) + "s\n" +
+    "ring  " + ringKey;
+}
+
+function toggleDebug() {
+  if (debugEl) { debugEl.remove(); debugEl = null; return; }
+  debugEl = document.createElement("pre");
+  debugEl.id = "debug";
+  debugEl.textContent = "debug on — start listening…";
+  document.body.appendChild(debugEl);
 }
 
 // Decide major vs minor from how long the tonic (and dominant) chords are held.
@@ -966,6 +998,19 @@ function initMic() {
   micBtn.addEventListener("click", () => {
     if (listening) stopListening(); else startListening();
   });
+
+  // Debug overlay: ?debug in the URL, or a triple-tap on the title.
+  try { if (new URLSearchParams(location.search).has("debug")) toggleDebug(); } catch (e) {}
+  const title = document.querySelector(".head h1");
+  if (title) {
+    let taps = 0, last = 0;
+    title.addEventListener("click", () => {
+      const t = performance.now();
+      taps = (t - last < 600) ? taps + 1 : 1;
+      last = t;
+      if (taps >= 3) { taps = 0; toggleDebug(); }
+    });
+  }
 }
 
 buildWheel();

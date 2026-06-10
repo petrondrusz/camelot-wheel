@@ -373,6 +373,22 @@ body {
   text-align: center;
 }
 
+#debug {
+  position: fixed;
+  top: max(env(safe-area-inset-top), 8px);
+  left: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  color: #9EE7FF;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(158, 231, 255, 0.25);
+  border-radius: 8px;
+  white-space: pre;
+  z-index: 9999;
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .head, .compat, .fret-card, .mic-wrap {
     opacity: 0;
