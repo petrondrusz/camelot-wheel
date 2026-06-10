@@ -300,7 +300,8 @@ const CHANGE_MS = 4000;    // jak dlouho musí krátkodobý odhad odporovat, ne�
 const MIN_SPIN_MS = 15000; // spinner se točí aspoň 15 s, než se vůbec zamkne
 const CONF_SURE = 0.68;    // „největší jistota" → zelený/fialový border dle dur/moll
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
-const MIN_PEAK_DB = -72;   // pod tím bereme jako ticho
+const SILENCE_DB = -85;    // pod tím je ticho (mic ikona, analýza neběží)
+const WEAK_DB = -60;       // mezi WEAK_DB a SILENCE_DB = slabý signál → varování
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 
 // Živá detekce akordů (omezená na diatoniku detekované tóniny → vyšší přesnost)
@@ -327,6 +328,7 @@ let emaChroma = null;   // short EMA → heatmap
 let keyEma = null;      // long leaky integrator → overall key
 let analyzedMs = 0;     // accumulated time of actual (non-silent) analysis
 let disagreeMs = 0;     // how long the short-term key has fought the settled one
+let weakMs = 0;         // debounce for the weak-signal hint
 let chordChroma = null; // short EMA → chord detection
 let chordCur = null;    // committed chord { root, qual }
 let chordCand = null;   // candidate chord being timed before commit
@@ -393,7 +395,31 @@ function scoreKeys(chroma) {
   const norm = new Array(13).fill(0);
   const span = mx - mn || 1e-9;
   for (let n = 1; n <= 12; n++) norm[n] = (cam[n] - mn) / span;
-  return { norm, fav, corr: cam[fav], minor: camMinor[fav] };
+  return { norm, fav, corr: cam[fav], minor: camMinor[fav], raw: cam };
+}
+
+// Major tonic semitone of a Camelot number (inverse of the mapping in scoreKeys).
+function majRoot(m) { return ((7 * (m - 8)) % 12 + 12) % 12; }
+
+// Perfect-fifth correction: chroma confuses a key with its dominant/subdominant
+// (adjacent Camelot numbers, a fifth apart — e.g. Db↔Ab, 6↔7). The progression
+// disambiguates: prefer the neighbour whose tonic chords (I + relative i) are
+// actually held the longest. Conservative — only overrides on a clear margin.
+function correctKey(n0) {
+  let total = 0;
+  for (const k in chordTime) total += chordTime[k];
+  if (total < 5) return n0; // not enough progression evidence yet
+  const support = m => {
+    const r = majRoot(m);
+    return (chordTime[r + ":maj"] || 0) + (chordTime[(r + 9) % 12 + ":min"] || 0);
+  };
+  const s0 = support(n0);
+  let best = n0, bestS = s0;
+  for (const m of [mod12(n0 - 1), mod12(n0 + 1)]) {
+    const s = support(m);
+    if (s > bestS) { bestS = s; best = m; }
+  }
+  return (best !== n0 && bestS > s0 * 1.4) ? best : n0;
 }
 
 // Živá heatmapa — obě výseče páru (A i B) podle skóre svého čísla.
@@ -443,10 +469,12 @@ function setRing(state, mode) {
   hubRing.classList.toggle("min", sure && mode === "min");
 }
 
-// Spinner speed reflects how close we are to locking (slow → fast).
-function setSpinSpeed(corr) {
+// Spinner speed reflects progress toward locking (slow → fast). Progress is
+// gated by elapsed time AND confidence, so it isn't pinned fast the whole time.
+function setSpin(progress) {
   if (!hubRing) return;
-  const d = corr < 0.3 ? "2.2s" : corr < 0.5 ? "1.5s" : corr < 0.65 ? "1.0s" : "0.7s";
+  const p = Math.max(0, Math.min(1, progress));
+  const d = p < 0.25 ? "2.2s" : p < 0.5 ? "1.6s" : p < 0.8 ? "1.1s" : "0.8s";
   if (d !== lastSpinDur) { lastSpinDur = d; hubRing.style.setProperty("--spin-dur", d); }
 }
 
@@ -476,7 +504,9 @@ function setHub(fav, corr, minor) {
   hubCode.style.opacity = tentative ? "0.4" : "1";
   hubName.style.opacity = tentative ? "0.4" : "1";
 
-  setSpinSpeed(corr);
+  const timeP = Math.min(1, analyzedMs / MIN_SPIN_MS);
+  const confP = Math.max(0, Math.min(1, (corr - 0.45) / (CONF_SURE - 0.45)));
+  setSpin(Math.min(timeP, confP));
   // Must spin at least MIN_SPIN_MS before it can lock at all.
   if (analyzedMs < MIN_SPIN_MS) { setRing("searching"); return; }
   // Tier with hysteresis so the border doesn't flicker on the boundary.
@@ -504,7 +534,7 @@ function frameChroma() {
 
   let maxDb = -Infinity;
   for (let i = lo; i <= hi; i++) if (freqBuf[i] > maxDb) maxDb = freqBuf[i];
-  if (!(maxDb > MIN_PEAK_DB)) return null; // too quiet / silence
+  if (!(maxDb > SILENCE_DB)) return null; // true silence → mic icon, analysis paused
 
   const floorDb = maxDb - PEAK_FLOOR_DB;
   const chroma = new Float64Array(12);
@@ -533,7 +563,7 @@ function frameChroma() {
       bass = ((Math.round(12 * Math.log2(f / 440) + 69) % 12) + 12) % 12;
     }
   }
-  if (bMax < MIN_PEAK_DB) bass = -1;
+  if (bMax < SILENCE_DB) bass = -1;
 
   let sum = 0, mx = 0;
   for (let i = 0; i < 12; i++) { sum += chroma[i]; if (chroma[i] > mx) mx = chroma[i]; }
@@ -543,14 +573,18 @@ function frameChroma() {
   const crest = mx / (sum / 12);
   const w = Math.min(1, Math.max(0.2, (crest - 2) / 3.5));
   for (let i = 0; i < 12; i++) chroma[i] /= mx;
-  return { chroma, w, bass };
+  return { chroma, w, bass, weak: maxDb < WEAK_DB };
 }
 
 function analyzeChroma(dt) {
   const fr = frameChroma();
-  if (!fr) { lastResult = null; showHubMic(true); return; }
+  if (!fr) { lastResult = null; setSpin(0); showHubMic(true); return; }
   const chroma = fr.chroma;
   analyzedMs += dt * 1000;
+
+  // Weak-signal hint (debounced) — too quiet for reliable analysis.
+  weakMs = fr.weak ? Math.min(1600, weakMs + dt * 1000) : Math.max(0, weakMs - dt * 1500);
+  micStatus(weakMs > 700 ? "Slabý signál — zesil zvuk" : "");
 
   // Short EMA (~3 s) → responsive heatmap (current chords).
   const a = Math.exp(-dt / EMA_TAU);
@@ -576,18 +610,23 @@ function analyzeChroma(dt) {
   const key = scoreKeys(keyEma);
   if (changing && key.fav === heat.fav) disagreeMs = 0; // re-locked → resume slow
 
-  lastResult = { fav: key.fav, corr: key.corr };
-  applyHeatmap(heat.norm, key.fav);    // wheel reacts to chords, key pair pulses
-  setHub(key.fav, key.corr, key.minor);
+  // Correct fifth-errors (off-by-one Camelot) using the chord progression.
+  const favNum = correctKey(key.fav);
+  const corr = key.raw[favNum];
+  const mode = progressionMode(favNum) || (key.minor ? "min" : "maj");
+
+  lastResult = { fav: favNum, corr };
+  applyHeatmap(heat.norm, favNum);     // wheel reacts to chords, key pair pulses
+  setHub(favNum, corr, mode === "min");
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
-  const [rNote, rSemi] = DATA[key.fav][key.minor ? "A" : "B"];
+  const [rNote, rSemi] = DATA[favNum][mode === "min" ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
 
-  // Live chords — short window, constrained to the key's diatonic triads.
+  // Live chords — short window, constrained to the corrected key's diatonic triads.
   const aC = Math.exp(-dt / CHORD_TAU);
   if (!chordChroma) chordChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) chordChroma[i] = chordChroma[i] * aC + chroma[i] * (1 - aC);
-  updateChord(chordChroma, fr.bass, key.fav, dt);
+  updateChord(chordChroma, fr.bass, favNum, dt);
   // Tally time per chord → lets us read major/minor from the progression itself.
   if (chordCur) {
     const ck = chordCur.root + ":" + chordCur.qual;
@@ -738,6 +777,7 @@ function startListening() {
   keyEma = null;
   analyzedMs = 0;
   disagreeMs = 0;
+  weakMs = 0;
   chordChroma = null;
   chordCur = null;
   chordCand = null;
@@ -803,6 +843,7 @@ function stopListening() {
   micBtn.classList.remove("listening");
   micBtn.setAttribute("aria-pressed", "false");
   if (appEl) appEl.classList.remove("listening");
+  micStatus("");
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micSrc) { try { micSrc.disconnect(); } catch (e) {} micSrc = null; }
