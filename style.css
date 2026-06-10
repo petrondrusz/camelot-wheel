@@ -82,6 +82,18 @@ body {
 #wheel g.seg:focus-visible { outline: none; }
 #wheel g.seg:focus-visible path { stroke-width: 2.5; }
 
+/* Most probable pair during detection — gentle opacity pulse (smooth, ~1 Hz,
+   not a hard strobe) plus a slightly stronger outline. */
+#wheel g.seg.detected {
+  animation: seg-detected 1s var(--ease-in-out) infinite;
+}
+#wheel g.seg.detected path { stroke-width: 2; }
+
+@keyframes seg-detected {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
 @media (hover: hover) and (pointer: fine) {
   #wheel g.seg:not(.sel):hover { opacity: 0.85; }
 }
@@ -303,6 +315,7 @@ body {
   #wheel .hub-text.pop { animation: none; }
   .chip { animation: none; }
   .meter i { will-change: auto; } /* bars set to a static EQ glyph from JS */
+  #wheel g.seg.detected { animation: none; opacity: 1; } /* steady, no flashing */
   #wheel .hub-mic-rms { transform: none; transition: none; }
   #wheel #hub-mic.active .hub-mic-breath { animation: hub-mic-breath-rm 2.4s ease-in-out infinite; }
 }

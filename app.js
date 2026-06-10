@@ -173,6 +173,7 @@ function update() {
     s.t1.setAttribute("fill", c.t1);
     s.t2.setAttribute("fill", c.t2);
     s.g.classList.toggle("sel", isSel);
+    s.g.classList.remove("detected");
     s.g.style.opacity = (isSel || isComp) ? "1" : "0.32";
     s.g.setAttribute("aria-pressed", isSel ? "true" : "false");
   }
@@ -343,13 +344,18 @@ function scoreKeys(chroma) {
 function rgba(ring, alpha) { return "rgba(" + RING_RGB[ring] + "," + alpha.toFixed(3) + ")"; }
 
 // Živá heatmapa — obě výseče páru (A i B) podle skóre svého čísla.
-function applyHeatmap(norm) {
+// Nejpravděpodobnější pár (fav) navíc pulzuje (.detected) — opacity řídí CSS
+// animace, takže ji tady nepřepisujeme inline stylem.
+function applyHeatmap(norm, fav) {
   for (const key in segs) {
     const s = segs[key];
     const sc = norm[s.num];
     const c = COLORS[s.ring];
+    const isFav = s.num === fav;
     s.g.classList.remove("sel");
-    s.g.style.opacity = (0.12 + 0.88 * sc).toFixed(3);
+    s.g.classList.toggle("detected", isFav);
+    if (isFav) s.g.style.opacity = "";
+    else s.g.style.opacity = (0.12 + 0.88 * sc).toFixed(3);
     s.p.setAttribute("fill", rgba(s.ring, 0.08 + 0.5 * sc));
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
@@ -420,7 +426,7 @@ function analyzeChroma(dt) {
 
   const { norm, fav, corr, minor } = scoreKeys(emaChroma);
   lastResult = { fav, corr };
-  applyHeatmap(norm);
+  applyHeatmap(norm, fav);
   setHub(fav, corr);
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
   const [rNote, rSemi] = DATA[fav][minor ? "A" : "B"];
@@ -565,6 +571,7 @@ function renderLocked() {
     const isLock = s.num === lockedNum;
     const c = isLock ? COLORS.sel : COLORS[s.ring];
     s.g.classList.toggle("sel", isLock);
+    s.g.classList.remove("detected");
     s.p.setAttribute("fill", c.fill);
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
