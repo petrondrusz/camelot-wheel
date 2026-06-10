@@ -151,6 +151,15 @@ function buildWheel() {
   });
   wheel.appendChild(hub);
 
+  // Confidence ring around the hub: spins while searching, locks as a
+  // highlighted gradient border once the detection is confident.
+  const ring = el("circle", {
+    id: "hub-ring", cx: CX, cy: CY, r: 66,
+    fill: "none", stroke: "url(#selGrad)", "stroke-width": "3", "stroke-linecap": "round"
+  });
+  ring.style.display = "none";
+  wheel.appendChild(ring);
+
   // Key name large + pure white on top, Camelot number smaller + muted below.
   const hName = el("text", {
     id: "hub-name", "class": "hub-text", x: CX, y: CY - 12, "text-anchor": "middle",
@@ -196,6 +205,7 @@ function update() {
   }
 
   if (hubMic) showHubMic(false);
+  setRing("off");
   for (const id of ["hub-code", "hub-name"]) {
     const t = document.getElementById(id);
     t.classList.remove("pop");
@@ -324,7 +334,8 @@ let chordHist = [];     // recent committed chords [{ name, qual }]
 let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
-let hubCode = null, hubName = null, hubMic = null;
+let hubCode = null, hubName = null, hubMic = null, hubRing = null;
+let ringState = "off"; // "off" | "searching" | "confident"
 let micBtn = null, micStatusEl = null, appEl = null, chordStripEl = null;
 
 // Button analyzer — symmetric volume bars left/right of the icon.
@@ -413,6 +424,16 @@ function popHub() {
   }
 }
 
+// Confidence ring: spinner while searching, locked gradient border when sure.
+// Only flips on a real state change so the CSS animation isn't restarted.
+function setRing(state) {
+  if (!hubRing || ringState === state) return;
+  ringState = state;
+  hubRing.style.display = state === "off" ? "none" : "";
+  hubRing.classList.toggle("searching", state === "searching");
+  hubRing.classList.toggle("confident", state === "confident");
+}
+
 // Show the animated mic icon in the hub instead of the code/name texts.
 // Used only for true silence / before the first reading.
 function showHubMic(on) {
@@ -421,7 +442,7 @@ function showHubMic(on) {
   hubMic.classList.toggle("active", on);
   hubCode.style.display = on ? "none" : "";
   hubName.style.display = on ? "none" : "";
-  if (on) lastFav = null;
+  if (on) { lastFav = null; setRing("searching"); }
   else { hubCode.style.opacity = "1"; hubName.style.opacity = "1"; }
 }
 
@@ -436,6 +457,9 @@ function setHub(fav, corr) {
   hubName.textContent = DATA[fav].A[0] + " / " + DATA[fav].B[0];
   hubCode.style.opacity = tentative ? "0.4" : "1";
   hubName.style.opacity = tentative ? "0.4" : "1";
+  // Ring with hysteresis around CONF so it doesn't flicker on the boundary.
+  const confident = ringState === "confident" ? corr >= CONF - 0.06 : corr >= CONF + 0.06;
+  setRing(confident ? "confident" : "searching");
 }
 
 // Build a 12-bin chroma from the current spectrum using only local spectral
@@ -764,6 +788,7 @@ function renderLocked() {
   }
   lastFav = null;
   showHubMic(false);
+  setRing("confident"); // keep the highlighted border on the locked result
   hubCode.textContent = String(lockedNum);
   hubName.textContent = DATA[lockedNum].A[0] + " / " + DATA[lockedNum].B[0];
   popHub();
@@ -775,6 +800,7 @@ function initMic() {
   hubCode = document.getElementById("hub-code");
   hubName = document.getElementById("hub-name");
   hubMic = document.getElementById("hub-mic");
+  hubRing = document.getElementById("hub-ring");
   appEl = document.querySelector(".app");
   chordStripEl = document.getElementById("chord-strip");
 

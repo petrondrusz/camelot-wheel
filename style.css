@@ -111,6 +111,36 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* Confidence ring around the hub (circumference ≈ 415). */
+#wheel #hub-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+#wheel #hub-ring.searching {
+  animation: hub-spin 1.4s linear infinite, hub-dash 1.4s ease-in-out infinite;
+}
+
+#wheel #hub-ring.confident {
+  animation: hub-draw 520ms var(--ease-out) both;
+  filter: drop-shadow(0 0 6px rgba(251, 100, 182, 0.5));
+}
+
+@keyframes hub-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes hub-dash {
+  0%   { stroke-dasharray: 8 410;   stroke-dashoffset: 0; }
+  50%  { stroke-dasharray: 200 410; stroke-dashoffset: -60; }
+  100% { stroke-dasharray: 8 410;   stroke-dashoffset: -415; }
+}
+
+@keyframes hub-draw {
+  from { stroke-dasharray: 415; stroke-dashoffset: 415; }
+  to   { stroke-dasharray: 415; stroke-dashoffset: 0; }
+}
+
 #wheel .hub-mic-rms,
 #wheel .hub-mic-breath {
   transform-box: fill-box;
@@ -366,6 +396,8 @@ body {
   .meter i { will-change: auto; } /* bars set to a static EQ glyph from JS */
   #wheel g.seg.detected { animation: none; opacity: 1; } /* steady, no flashing */
   .chord.cur { animation: none; }
+  #wheel #hub-ring.searching { animation: none; stroke-dasharray: 7 26; opacity: 0.6; }
+  #wheel #hub-ring.confident { animation: none; stroke-dasharray: none; }
   #wheel .hub-mic-rms { transform: none; transition: none; }
   #wheel #hub-mic.active .hub-mic-breath { animation: hub-mic-breath-rm 2.4s ease-in-out infinite; }
 }
