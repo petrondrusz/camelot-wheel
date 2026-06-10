@@ -297,7 +297,8 @@ const EMA_TAU = 3;         // heatmapa — krátké vyhlazování [s]
 const KEY_TAU = 18;        // celková tónina — pomalý, stabilní integrátor [s]
 const KEY_TAU_FAST = 4;    // při detekované změně písně přeladit rychle [s]
 const CHANGE_MS = 4000;    // jak dlouho musí krátkodobý odhad odporovat, než přeladí
-const WARMUP_FRAMES = 45;  // ~3 s rychlého náběhu na začátku, pak stabilní τ
+const MIN_SPIN_MS = 15000; // spinner se točí aspoň 15 s, než se vůbec zamkne
+const CONF_SURE = 0.68;    // „největší jistota" → zelený/fialový border dle dur/moll
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const MIN_PEAK_DB = -72;   // pod tím bereme jako ticho
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
@@ -324,18 +325,20 @@ let rafId = null;
 let listening = false;
 let emaChroma = null;   // short EMA → heatmap
 let keyEma = null;      // long leaky integrator → overall key
-let keyFrames = 0;      // analysed frames since start (for the fast warmup lock)
+let analyzedMs = 0;     // accumulated time of actual (non-silent) analysis
 let disagreeMs = 0;     // how long the short-term key has fought the settled one
 let chordChroma = null; // short EMA → chord detection
 let chordCur = null;    // committed chord { root, qual }
 let chordCand = null;   // candidate chord being timed before commit
 let chordCandMs = 0;
 let chordHist = [];     // recent committed chords [{ name, qual }]
+let chordTime = {};     // accumulated seconds per chord ("root:qual") → mode from progression
 let lastAnalyzeT = 0;
 let lastFav = null;
 let lastResult = null;       // { fav, corr }
 let hubCode = null, hubName = null, hubMic = null, hubRing = null;
-let ringState = "off"; // "off" | "searching" | "confident"
+let ringKey = "off";   // "off" | "searching" | "confident" | "sure:maj" | "sure:min"
+let lastSpinDur = "";
 let micBtn = null, micStatusEl = null, appEl = null, chordStripEl = null;
 
 // Button analyzer — symmetric volume bars left/right of the icon.
@@ -424,14 +427,27 @@ function popHub() {
   }
 }
 
-// Confidence ring: spinner while searching, locked gradient border when sure.
-// Only flips on a real state change so the CSS animation isn't restarted.
-function setRing(state) {
-  if (!hubRing || ringState === state) return;
-  ringState = state;
+// Confidence ring. Tiers: off | searching (spinner) | confident (orange→pink
+// border) | sure (green/purple border by mode). Only flips on a real change so
+// the CSS animation isn't restarted.
+function setRing(state, mode) {
+  const k = state === "sure" ? "sure:" + mode : state;
+  if (!hubRing || ringKey === k) return;
+  ringKey = k;
+  const sure = state === "sure";
   hubRing.style.display = state === "off" ? "none" : "";
   hubRing.classList.toggle("searching", state === "searching");
-  hubRing.classList.toggle("confident", state === "confident");
+  hubRing.classList.toggle("confident", state === "confident" || sure);
+  hubRing.classList.toggle("sure", sure);
+  hubRing.classList.toggle("maj", sure && mode === "maj");
+  hubRing.classList.toggle("min", sure && mode === "min");
+}
+
+// Spinner speed reflects how close we are to locking (slow → fast).
+function setSpinSpeed(corr) {
+  if (!hubRing) return;
+  const d = corr < 0.3 ? "2.2s" : corr < 0.5 ? "1.5s" : corr < 0.65 ? "1.0s" : "0.7s";
+  if (d !== lastSpinDur) { lastSpinDur = d; hubRing.style.setProperty("--spin-dur", d); }
 }
 
 // Show the animated mic icon in the hub instead of the code/name texts.
@@ -442,14 +458,16 @@ function showHubMic(on) {
   hubMic.classList.toggle("active", on);
   hubCode.style.display = on ? "none" : "";
   hubName.style.display = on ? "none" : "";
-  if (on) { lastFav = null; setRing("searching"); }
+  // Ring is left untouched here so brief silent gaps don't reset a locked
+  // border back to the spinner; its tier is driven by setHub / start / lock.
+  if (on) lastFav = null;
   else { hubCode.style.opacity = "1"; hubName.style.opacity = "1"; }
 }
 
 // Live favorite — always shown while there's sound. Confidence (>= CONF)
 // only controls the visual certainty (dim = still settling) and the
 // release-lock; it must NOT gate the live display, or the key never shows.
-function setHub(fav, corr) {
+function setHub(fav, corr, minor) {
   showHubMic(false);
   const tentative = corr < CONF;
   if (fav !== lastFav) { lastFav = fav; if (!tentative) popHub(); }
@@ -457,9 +475,20 @@ function setHub(fav, corr) {
   hubName.textContent = DATA[fav].A[0] + " / " + DATA[fav].B[0];
   hubCode.style.opacity = tentative ? "0.4" : "1";
   hubName.style.opacity = tentative ? "0.4" : "1";
-  // Ring with hysteresis around CONF so it doesn't flicker on the boundary.
-  const confident = ringState === "confident" ? corr >= CONF - 0.06 : corr >= CONF + 0.06;
-  setRing(confident ? "confident" : "searching");
+
+  setSpinSpeed(corr);
+  // Must spin at least MIN_SPIN_MS before it can lock at all.
+  if (analyzedMs < MIN_SPIN_MS) { setRing("searching"); return; }
+  // Tier with hysteresis so the border doesn't flicker on the boundary.
+  const wasSure = ringKey.startsWith("sure");
+  const wasConf = ringKey === "confident" || wasSure;
+  if (corr >= CONF_SURE - (wasSure ? 0.05 : -0.05)) {
+    setRing("sure", progressionMode(fav) || (minor ? "min" : "maj"));
+  } else if (corr >= CONF - (wasConf ? 0.05 : -0.05)) {
+    setRing("confident");
+  } else {
+    setRing("searching");
+  }
 }
 
 // Build a 12-bin chroma from the current spectrum using only local spectral
@@ -521,6 +550,7 @@ function analyzeChroma(dt) {
   const fr = frameChroma();
   if (!fr) { lastResult = null; showHubMic(true); return; }
   const chroma = fr.chroma;
+  analyzedMs += dt * 1000;
 
   // Short EMA (~3 s) → responsive heatmap (current chords).
   const a = Math.exp(-dt / EMA_TAU);
@@ -535,22 +565,20 @@ function analyzeChroma(dt) {
   else disagreeMs = Math.max(0, disagreeMs - dt * 2000);
   const changing = disagreeMs > CHANGE_MS;
 
-  // Tonalness-weighted leaky integrator → overall key. Fast during the initial
-  // warmup and while a change is in progress, otherwise slow & stable; forgets
-  // old songs over ~KEY_TAU.
-  const warming = keyFrames < WARMUP_FRAMES;
-  const tau = (changing || warming) ? KEY_TAU_FAST : KEY_TAU;
+  // Tonalness-weighted leaky integrator → overall key. Slow & stable normally,
+  // fast only while a song change is in progress; forgets old songs over ~KEY_TAU.
+  // (No fast warmup — it deliberately takes its time before settling.)
+  const tau = changing ? KEY_TAU_FAST : KEY_TAU;
   const lr = (1 - Math.exp(-dt / tau)) * fr.w;
   if (!keyEma) keyEma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) keyEma[i] += lr * (chroma[i] - keyEma[i]);
-  keyFrames++;
 
   const key = scoreKeys(keyEma);
   if (changing && key.fav === heat.fav) disagreeMs = 0; // re-locked → resume slow
 
   lastResult = { fav: key.fav, corr: key.corr };
   applyHeatmap(heat.norm, key.fav);    // wheel reacts to chords, key pair pulses
-  setHub(key.fav, key.corr);
+  setHub(key.fav, key.corr, key.minor);
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
   const [rNote, rSemi] = DATA[key.fav][key.minor ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
@@ -560,6 +588,22 @@ function analyzeChroma(dt) {
   if (!chordChroma) chordChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) chordChroma[i] = chordChroma[i] * aC + chroma[i] * (1 - aC);
   updateChord(chordChroma, fr.bass, key.fav, dt);
+  // Tally time per chord → lets us read major/minor from the progression itself.
+  if (chordCur) {
+    const ck = chordCur.root + ":" + chordCur.qual;
+    chordTime[ck] = (chordTime[ck] || 0) + dt;
+  }
+}
+
+// Decide major vs minor from how long the tonic (and dominant) chords are held.
+// I + 0.4·V vs vi(=relative i) + 0.4·iii(=relative v). Falls back to null.
+function progressionMode(keyNum) {
+  const r = ((7 * (keyNum - 8)) % 12 + 12) % 12;
+  const g = k => chordTime[k] || 0;
+  const maj = g(r + ":maj") + 0.4 * g((r + 7) % 12 + ":maj");
+  const min = g((r + 9) % 12 + ":min") + 0.4 * g((r + 4) % 12 + ":min");
+  if (maj === 0 && min === 0) return null;
+  return min > maj ? "min" : "maj";
 }
 
 // Best-matching chord among the six diatonic triads of the key's major scale.
@@ -692,13 +736,15 @@ function startListening() {
   lockedNum = null;
   emaChroma = null;
   keyEma = null;
-  keyFrames = 0;
+  analyzedMs = 0;
   disagreeMs = 0;
   chordChroma = null;
   chordCur = null;
   chordCand = null;
   chordCandMs = 0;
   chordHist = [];
+  chordTime = {};
+  lastSpinDur = "";
   if (chordStripEl) chordStripEl.textContent = "";
   lastFav = null;
   lastResult = null;
@@ -707,7 +753,8 @@ function startListening() {
   micBtn.classList.add("listening");
   micBtn.setAttribute("aria-pressed", "true");
   if (appEl) appEl.classList.add("listening"); // dim chips, light up fretboard
-  showHubMic(true); // mic icon until the first reading arrives
+  showHubMic(true);     // mic icon until the first reading arrives
+  setRing("searching"); // spin from the very start
 
   // AudioContext vytvořit/resumnout synchronně v rámci gesta (iOS)
   try {
@@ -788,7 +835,8 @@ function renderLocked() {
   }
   lastFav = null;
   showHubMic(false);
-  setRing("confident"); // keep the highlighted border on the locked result
+  // Final locked result → highlighted border in the progression's mode colour.
+  setRing("sure", progressionMode(lockedNum) || "maj");
   hubCode.textContent = String(lockedNum);
   hubName.textContent = DATA[lockedNum].A[0] + " / " + DATA[lockedNum].B[0];
   popHub();

@@ -115,15 +115,28 @@ body {
 #wheel #hub-ring {
   transform-box: fill-box;
   transform-origin: center;
+  transition: filter 320ms var(--ease-out);
 }
 
+/* Spin speed (--spin-dur) reflects how close we are to locking. */
 #wheel #hub-ring.searching {
-  animation: hub-spin 1.4s linear infinite, hub-dash 1.4s ease-in-out infinite;
+  animation: hub-spin var(--spin-dur, 1.4s) linear infinite, hub-dash 1.4s ease-in-out infinite;
 }
 
+/* Locked but moderate confidence → orange→pink button gradient. */
 #wheel #hub-ring.confident {
   animation: hub-draw 520ms var(--ease-out) both;
   filter: drop-shadow(0 0 6px rgba(251, 100, 182, 0.5));
+}
+
+/* Highest confidence → green (major) / purple (minor), by the progression. */
+#wheel #hub-ring.sure.maj {
+  stroke: url(#durGrad);
+  filter: drop-shadow(0 0 8px rgba(10, 228, 72, 0.55));
+}
+#wheel #hub-ring.sure.min {
+  stroke: url(#mollGrad);
+  filter: drop-shadow(0 0 8px rgba(157, 140, 255, 0.6));
 }
 
 @keyframes hub-spin {
@@ -184,39 +197,38 @@ body {
   display: none;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  gap: 7px;
   min-height: 54px;
-  font-weight: 600;
 }
 
 .app.listening .chord-strip { display: flex; }
 
-.chord-sep { color: var(--faint); font-size: 14px; }
+.chord-sep { color: var(--faint); font-size: 13px; }
 
+/* Chord = chip, consistent with the compatible-keys chips. */
 .chord {
-  display: inline-block;
-  font-size: 16px;
-  color: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 0.6;
   transition: opacity 200ms var(--ease-out);
 }
 
-.chord.cur { font-size: 23px; }
-
-.chord.cur.maj {
-  background: linear-gradient(120deg, #62F593, #06B838);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+/* Current chord = filled gradient pill (green major / purple minor). */
+.chord.cur {
+  opacity: 1;
+  border-color: transparent;
+  color: #0E120E;
+  animation: chord-in 340ms var(--ease-back);
 }
-
-.chord.cur.min {
-  background: linear-gradient(120deg, #C3B0FF, #7A5BFF);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.chord.cur { animation: chord-in 340ms var(--ease-back); }
+.chord.cur.maj { background: linear-gradient(120deg, #62F593, #06B838); }
+.chord.cur.min { background: linear-gradient(120deg, #C3B0FF, #7A5BFF); color: #140C20; }
 
 @keyframes chord-in {
   from { opacity: 0; transform: translateY(6px) scale(0.92); }
