@@ -301,8 +301,9 @@ const MIN_SPIN_MS = 15000; // spinner se točí aspoň 15 s, než se vůbec zamk
 const CONF_SURE = 0.68;    // „největší jistota" → zelený/fialový border dle dur/moll
 const BAND_LO = 100, BAND_HI = 4500;   // analyzované pásmo [Hz]
 const SILENCE_DB = -85;    // pod tím je ticho (mic ikona, analýza neběží)
-const WEAK_DB = -60;       // mezi WEAK_DB a SILENCE_DB = slabý signál → varování
+const WEAK_DB = -68;       // vyhlazená úroveň pod tímhle = slabý signál → varování
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
+const CHORD_MEM_TAU = 20;  // paměť progrese [s] — leaky, ať se nová píseň prosadí
 
 // Živá detekce akordů (omezená na diatoniku detekované tóniny → vyšší přesnost)
 const CHORD_TAU = 0.45;    // krátké okno pro akord [s]
@@ -328,7 +329,8 @@ let emaChroma = null;   // short EMA → heatmap
 let keyEma = null;      // long leaky integrator → overall key
 let analyzedMs = 0;     // accumulated time of actual (non-silent) analysis
 let disagreeMs = 0;     // how long the short-term key has fought the settled one
-let weakMs = 0;         // debounce for the weak-signal hint
+let levelDb = null;     // smoothed peak level → stable weak-signal hint
+let weakWarn = false;   // current weak-signal warning state (hysteresis)
 let chordChroma = null; // short EMA → chord detection
 let chordCur = null;    // committed chord { root, qual }
 let chordCand = null;   // candidate chord being timed before commit
@@ -578,7 +580,7 @@ function frameChroma() {
   const crest = mx / (sum / 12);
   const w = Math.min(1, Math.max(0.2, (crest - 2) / 3.5));
   for (let i = 0; i < 12; i++) chroma[i] /= mx;
-  return { chroma, w, bass, weak: maxDb < WEAK_DB };
+  return { chroma, w, bass, db: maxDb };
 }
 
 function analyzeChroma(dt) {
@@ -587,9 +589,11 @@ function analyzeChroma(dt) {
   const chroma = fr.chroma;
   analyzedMs += dt * 1000;
 
-  // Weak-signal hint (debounced) — too quiet for reliable analysis.
-  weakMs = fr.weak ? Math.min(1600, weakMs + dt * 1000) : Math.max(0, weakMs - dt * 1500);
-  micStatus(weakMs > 700 ? "Slabý signál — zesil zvuk" : "");
+  // Weak-signal hint from a smoothed level with hysteresis (no per-frame blink).
+  const aL = Math.exp(-dt / 0.5);
+  levelDb = levelDb === null ? fr.db : levelDb * aL + fr.db * (1 - aL);
+  if (weakWarn ? levelDb > WEAK_DB + 6 : levelDb < WEAK_DB) weakWarn = !weakWarn;
+  micStatus(weakWarn ? "Sound signal is weak" : "");
 
   // Short EMA (~3 s) → responsive heatmap (current chords).
   const a = Math.exp(-dt / EMA_TAU);
@@ -632,7 +636,11 @@ function analyzeChroma(dt) {
   if (!chordChroma) chordChroma = Array.from(chroma);
   else for (let i = 0; i < 12; i++) chordChroma[i] = chordChroma[i] * aC + chroma[i] * (1 - aC);
   updateChord(chordChroma, fr.bass, favNum, dt);
-  // Tally time per chord → lets us read major/minor from the progression itself.
+  // Leaky tally of time per chord → major/minor (and fifth-correction) from the
+  // progression. Decays so a new song's chords overcome the previous one's
+  // (e.g. a 10A → 10B relative flip, which chroma alone can't see).
+  const decay = Math.exp(-dt / CHORD_MEM_TAU);
+  for (const k in chordTime) chordTime[k] *= decay;
   if (chordCur) {
     const ck = chordCur.root + ":" + chordCur.qual;
     chordTime[ck] = (chordTime[ck] || 0) + dt;
@@ -782,7 +790,8 @@ function startListening() {
   keyEma = null;
   analyzedMs = 0;
   disagreeMs = 0;
-  weakMs = 0;
+  levelDb = null;
+  weakWarn = false;
   chordChroma = null;
   chordCur = null;
   chordCand = null;
