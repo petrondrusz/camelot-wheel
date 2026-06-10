@@ -445,7 +445,12 @@ function correctKey(n0, raw) {
   const f0 = keyFit(n0);
   let best = n0, bestF = f0;
   for (let m = 1; m <= 12; m++) {
-    if (m === n0 || raw[m] < raw[n0] - 0.12) continue; // chroma must find it plausible
+    // Only override toward a key whose chroma is genuinely COMPETITIVE: real
+    // fifth-confusion happens between keys that share ~all notes, so their
+    // correlations sit within a hair of each other. A clear chroma winner
+    // (e.g. 0.45 vs 0.34) is NOT ambiguous — trust it, don't let a noisy chord
+    // tally drag a correct result two fifths away.
+    if (m === n0 || raw[m] < raw[n0] - 0.06) continue;
     const f = keyFit(m);
     if (f > bestF) { bestF = f; best = m; }
   }
