@@ -20,9 +20,9 @@ const CX = 200, CY = 200;
 const RINGS = { B: [122, 172, 154, 134], A: [72, 122, 106, 87] };
 
 const COLORS = {
-  B:   { fill: "rgba(58,194,160,0.13)", stroke: "rgba(58,194,160,0.55)", t1: "#7FE0C6", t2: "#4DA890" },
-  A:   { fill: "rgba(142,134,232,0.13)", stroke: "rgba(142,134,232,0.55)", t1: "#B7B1F2", t2: "#7E77C9" },
-  sel: { fill: "#F2A33C", stroke: "#F2A33C", t1: "#2B1D08", t2: "#5C3D0E" }
+  B:   { fill: "rgba(78,216,178,0.12)", stroke: "rgba(78,216,178,0.5)", t1: "#8CE8CC", t2: "#52B295" },
+  A:   { fill: "rgba(163,155,255,0.12)", stroke: "rgba(163,155,255,0.5)", t1: "#C2BCFF", t2: "#8983D6" },
+  sel: { fill: "#FF7A1A", stroke: "#FF7A1A", t1: "#2B1200", t2: "#5E2B00" }
 };
 
 let sel = loadSel() || { num: 8, ring: "A" };
@@ -98,12 +98,12 @@ function buildWheel() {
       const [nx, ny] = pt(rn, th);
       const t1 = el("text", {
         x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "central",
-        "font-size": "13", "font-weight": "600"
+        "font-size": "15", "font-weight": "600"
       });
       t1.textContent = k + ring;
       const t2 = el("text", {
         x: nx, y: ny, "text-anchor": "middle", "dominant-baseline": "central",
-        "font-size": "11"
+        "font-size": "12"
       });
       t2.textContent = DATA[k][ring][0];
       g.append(p, t1, t2);
@@ -119,17 +119,17 @@ function buildWheel() {
 
   const hub = el("circle", {
     cx: CX, cy: CY, r: 64,
-    fill: "#16161D", stroke: "#26262F", "stroke-width": "1"
+    fill: "#141414", stroke: "#2C2C2E", "stroke-width": "1"
   });
   wheel.appendChild(hub);
 
   const hCode = el("text", {
-    id: "hub-code", x: CX, y: CY - 12, "text-anchor": "middle",
-    "dominant-baseline": "central", "font-size": "26", "font-weight": "600", fill: "#F2F1ED"
+    id: "hub-code", "class": "hub-text", x: CX, y: CY - 12, "text-anchor": "middle",
+    "dominant-baseline": "central", "font-size": "30", "font-weight": "600", fill: "#FFFFFF"
   });
   const hName = el("text", {
-    id: "hub-name", x: CX, y: CY + 16, "text-anchor": "middle",
-    "dominant-baseline": "central", "font-size": "13", fill: "#9C9AA3"
+    id: "hub-name", "class": "hub-text", x: CX, y: CY + 16, "text-anchor": "middle",
+    "dominant-baseline": "central", "font-size": "14", fill: "#A1A1A6"
   });
   wheel.append(hCode, hName);
 }
@@ -141,7 +141,7 @@ function update() {
     const isSel = key === sel.num + sel.ring;
     const isComp = compKeys.includes(key);
     const c = isSel ? COLORS.sel : COLORS[s.ring];
-    s.p.setAttribute("fill", isSel ? c.fill : (isComp ? c.fill.replace("0.13", "0.28") : c.fill));
+    s.p.setAttribute("fill", isSel ? c.fill : (isComp ? c.fill.replace("0.12", "0.3") : c.fill));
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
     s.t2.setAttribute("fill", c.t2);
@@ -150,6 +150,12 @@ function update() {
     s.g.setAttribute("aria-pressed", isSel ? "true" : "false");
   }
 
+  for (const id of ["hub-code", "hub-name"]) {
+    const t = document.getElementById(id);
+    t.classList.remove("pop");
+    void t.getBBox();
+    t.classList.add("pop");
+  }
   document.getElementById("hub-code").textContent = sel.num + sel.ring;
   document.getElementById("hub-name").textContent = fullName(sel.num, sel.ring);
 
@@ -165,56 +171,63 @@ function update() {
     const name = document.createElement("span");
     name.textContent = fullName(n, r);
     b.append(code, name);
+    b.style.animationDelay = (chips.children.length * 45) + "ms";
     b.addEventListener("click", () => { sel = { num: n, ring: r }; saveSel(); update(); });
     chips.appendChild(b);
   }
 
   const [note, semi] = DATA[sel.num][sel.ring];
-  const fE = fretE(semi), fA = fretA(semi);
-  const fmt = f => f === 0 ? "prázdná" : f + ". pražec";
-  document.getElementById("fret-info").innerHTML =
-    "Základní tón <strong>" + note.replace("m", "") + "</strong> — " +
-    fmt(fE) + " na <strong>E</strong> · " + fmt(fA) + " na <strong>A</strong>";
-
-  buildFret(fE, fA);
+  updateFret(fretE(semi), fretA(semi), note.replace("m", ""));
 }
 
-function buildFret(fE, fA) {
+const FX = i => 38 + i * 25;
+const FYA = 38, FYE = 78;
+let dotA, dotE, dotLabelA, dotLabelE;
+
+function dotX(f) { return f === 0 ? FX(0) - 12 : FX(f) - 12.5; }
+
+function buildFretStatic() {
   const svg = document.getElementById("fret");
-  const xs = i => 38 + i * 25;
-  const yA = 38, yE = 74;
   let s = "";
-
-  s += `<text x="14" y="${yA}" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600" fill="#9C9AA3">A</text>`;
-  s += `<text x="14" y="${yE}" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600" fill="#9C9AA3">E</text>`;
-
-  s += `<line x1="${xs(0) - 12}" y1="${yA}" x2="${xs(12)}" y2="${yA}" stroke="#3A3A45" stroke-width="1.5"/>`;
-  s += `<line x1="${xs(0) - 12}" y1="${yE}" x2="${xs(12)}" y2="${yE}" stroke="#3A3A45" stroke-width="2"/>`;
-
+  s += `<text x="14" y="${FYA}" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#A1A1A6">A</text>`;
+  s += `<text x="14" y="${FYE}" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#A1A1A6">E</text>`;
+  s += `<line x1="${FX(0) - 12}" y1="${FYA}" x2="${FX(12)}" y2="${FYA}" stroke="#3A3A3C" stroke-width="1.5"/>`;
+  s += `<line x1="${FX(0) - 12}" y1="${FYE}" x2="${FX(12)}" y2="${FYE}" stroke="#3A3A3C" stroke-width="2"/>`;
   for (let i = 0; i <= 12; i++) {
-    s += `<line x1="${xs(i)}" y1="${yA - 16}" x2="${xs(i)}" y2="${yE + 16}" stroke="#26262F" stroke-width="${i === 0 ? 3 : 1}"/>`;
+    s += `<line x1="${FX(i)}" y1="${FYA - 18}" x2="${FX(i)}" y2="${FYE + 18}" stroke="#2C2C2E" stroke-width="${i === 0 ? 3 : 1}"/>`;
   }
-
   for (const i of [3, 5, 7, 9]) {
-    s += `<circle cx="${xs(i) - 12.5}" cy="${(yA + yE) / 2}" r="2.5" fill="#3A3A45"/>`;
+    s += `<circle cx="${FX(i) - 12.5}" cy="${(FYA + FYE) / 2}" r="2.5" fill="#3A3A3C"/>`;
   }
-  s += `<circle cx="${xs(12) - 12.5}" cy="${yA - 4}" r="2.5" fill="#3A3A45"/>`;
-  s += `<circle cx="${xs(12) - 12.5}" cy="${yE + 4}" r="2.5" fill="#3A3A45"/>`;
-
-  const dot = (f, y) => {
-    const x = f === 0 ? xs(0) - 12 : xs(f) - 12.5;
-    return `<circle cx="${x}" cy="${y}" r="9" fill="#F2A33C"/>`;
-  };
-  s += dot(fA, yA);
-  s += dot(fE, yE);
-
+  s += `<circle cx="${FX(12) - 12.5}" cy="${FYA - 6}" r="2.5" fill="#3A3A3C"/>`;
+  s += `<circle cx="${FX(12) - 12.5}" cy="${FYE + 6}" r="2.5" fill="#3A3A3C"/>`;
   for (const i of [0, 3, 5, 7, 9, 12]) {
-    const x = i === 0 ? xs(0) - 12 : xs(i) - 12.5;
-    s += `<text x="${x}" y="${yE + 36}" text-anchor="middle" font-size="11" fill="#5C5B66">${i}</text>`;
+    s += `<text x="${dotX(i)}" y="${FYE + 40}" text-anchor="middle" font-size="12" fill="#6E6E73">${i}</text>`;
   }
-
   svg.innerHTML = s;
+
+  const mk = () => {
+    const g = el("g", { "class": "dot" });
+    const c = el("circle", { cx: 0, cy: 0, r: 12, fill: "#FF7A1A" });
+    const t = el("text", {
+      x: 0, y: 0, "text-anchor": "middle", "dominant-baseline": "central",
+      "font-size": "11", "font-weight": "600", fill: "#2B1200"
+    });
+    g.append(c, t);
+    svg.appendChild(g);
+    return [g, t];
+  };
+  [dotA, dotLabelA] = mk();
+  [dotE, dotLabelE] = mk();
+}
+
+function updateFret(fE, fA, note) {
+  dotA.style.transform = `translate(${dotX(fA)}px, ${FYA}px)`;
+  dotE.style.transform = `translate(${dotX(fE)}px, ${FYE}px)`;
+  dotLabelA.textContent = note;
+  dotLabelE.textContent = note;
 }
 
 buildWheel();
+buildFretStatic();
 update();

@@ -1,15 +1,15 @@
 :root {
-  --bg: #0D0D12;
-  --surface: #16161D;
-  --surface-2: #1D1D26;
-  --line: #26262F;
-  --text: #F2F1ED;
-  --muted: #9C9AA3;
-  --faint: #5C5B66;
-  --amber: #F2A33C;
-  --amber-deep: #2B1D08;
-  --teal: #3AC2A0;
-  --violet: #8E86E8;
+  --bg: #000000;
+  --surface: #141414;
+  --surface-2: #1C1C1E;
+  --line: #2C2C2E;
+  --text: #FFFFFF;
+  --muted: #A1A1A6;
+  --faint: #6E6E73;
+  --orange: #FF7A1A;
+  --orange-deep: #2B1200;
+  --teal: #4ED8B2;
+  --violet: #A39BFF;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   color-scheme: dark;
 }
@@ -25,27 +25,27 @@ body {
   font-weight: 400;
   line-height: 1.5;
   min-height: 100dvh;
-  padding: max(env(safe-area-inset-top), 20px) 16px max(env(safe-area-inset-bottom), 24px);
+  padding: max(env(safe-area-inset-top), 24px) 18px max(env(safe-area-inset-bottom), 28px);
 }
 
 .app {
-  max-width: 460px;
+  max-width: 480px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .head h1 {
-  font-size: 22px;
+  font-size: 32px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
-.head .dot { color: var(--amber); }
+.head .dot { color: var(--orange); }
 
 .head .sub {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -57,7 +57,7 @@ body {
 
 #wheel {
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
   height: auto;
   display: block;
   touch-action: manipulation;
@@ -65,11 +65,15 @@ body {
 
 #wheel g.seg {
   cursor: pointer;
-  transition: opacity 160ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out), transform 120ms var(--ease-out);
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
+#wheel g.seg:active { transform: scale(0.96); }
+
 #wheel g.seg path {
-  transition: fill 160ms var(--ease-out), stroke 160ms var(--ease-out);
+  transition: fill 180ms var(--ease-out), stroke 180ms var(--ease-out);
 }
 
 #wheel g.seg:focus-visible { outline: none; }
@@ -79,18 +83,25 @@ body {
   #wheel g.seg:not(.sel):hover { opacity: 0.85; }
 }
 
+#wheel .hub-text.pop { animation: pop 200ms var(--ease-out); }
+
+@keyframes pop {
+  from { opacity: 0.2; }
+  to { opacity: 1; }
+}
+
 .compat-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .chips {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -100,68 +111,67 @@ body {
   background: var(--surface);
   color: var(--text);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 400;
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 52px;
+  padding: 0 20px;
   border-radius: 999px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), transform 120ms var(--ease-out);
+  animation: chip-in 220ms var(--ease-out) both;
+}
+
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chip .code { font-weight: 600; }
 .chip .code.dur { color: var(--teal); }
 .chip .code.moll { color: var(--violet); }
 
-.chip:active { transform: scale(0.97); }
+.chip:active { transform: scale(0.96); }
 
 @media (hover: hover) and (pointer: fine) {
   .chip:hover { border-color: var(--faint); background: var(--surface-2); }
 }
 
 .chip:focus-visible {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--orange);
   outline-offset: 2px;
 }
 
 .fret-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 16px;
-}
-
-.fret-info {
-  font-size: 15px;
-  color: var(--muted);
-  margin-bottom: 12px;
-}
-
-.fret-info strong {
-  color: var(--text);
-  font-weight: 600;
+  border-radius: 24px;
+  padding: 22px 16px 18px;
 }
 
 #fret { width: 100%; height: auto; display: block; }
 
+#fret g.dot {
+  transition: transform 240ms var(--ease-out);
+}
+
 .rules {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 0 4px;
+  gap: 8px;
+  padding: 0 6px;
 }
 
 .rules p {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--faint);
 }
 
 .rules .k {
   display: inline-block;
-  min-width: 34px;
+  min-width: 42px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -183,5 +193,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #wheel g.seg, #wheel g.seg path, .chip { transition: none; }
+  #wheel g.seg, #wheel g.seg path, .chip, #fret g.dot { transition: none; animation: none; }
+  #wheel .hub-text.pop { animation: none; }
+  .chip { animation: none; }
 }
