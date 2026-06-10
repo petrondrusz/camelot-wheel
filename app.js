@@ -304,6 +304,7 @@ const SILENCE_DB = -85;    // pod tím je ticho (mic ikona, analýza neběží)
 const WEAK_DB = -74;       // vyhlazená úroveň pod tímhle = slabý signál → varování
 const PEAK_FLOOR_DB = 42;  // píky slabší než (max − 42 dB) ignorujeme jako noise floor
 const CHORD_MEM_TAU = 20;  // paměť progrese [s] — leaky, ať se nová píseň prosadí
+const SILENCE_HIDE_MS = 450; // teprve po tomhle souvislém tichu ukázat mic ikonu
 
 // Živá detekce akordů (omezená na diatoniku detekované tóniny → vyšší přesnost)
 const CHORD_TAU = 0.45;    // krátké okno pro akord [s]
@@ -620,10 +621,14 @@ function frameChroma() {
 function analyzeChroma(dt) {
   const fr = frameChroma();
   if (!fr) {
-    // Sustained silence (a pause / end of song) → auto-restart the detection.
+    // Debounce: a momentary dip below the floor (between beats/transients) must
+    // NOT flip the locked key to the mic icon. Only react to a real gap.
     silenceMs += dt * 1000;
-    if (silenceMs >= 2000 && analyzedMs > 0) { resetDetection(); setRing("searching"); }
-    lastResult = null; setSpin(0); showHubMic(true);
+    if (silenceMs > SILENCE_HIDE_MS) {
+      lastResult = null; setSpin(0); showHubMic(true);
+      // Sustained silence (a pause / end of song) → auto-restart the detection.
+      if (silenceMs >= 2000 && analyzedMs > 0) { resetDetection(); setRing("searching"); }
+    }
     return;
   }
   silenceMs = 0;
