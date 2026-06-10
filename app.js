@@ -17,12 +17,12 @@ const DATA = {
 
 const NS = "http://www.w3.org/2000/svg";
 const CX = 200, CY = 200;
-const RINGS = { B: [122, 172, 154, 134], A: [72, 122, 106, 87] };
+const RINGS = { B: [136, 194, 174, 150], A: [80, 136, 117, 96] };
 
 const COLORS = {
-  B:   { fill: "rgba(78,216,178,0.12)", stroke: "rgba(78,216,178,0.5)", t1: "#8CE8CC", t2: "#52B295" },
-  A:   { fill: "rgba(163,155,255,0.12)", stroke: "rgba(163,155,255,0.5)", t1: "#C2BCFF", t2: "#8983D6" },
-  sel: { fill: "#FF7A1A", stroke: "#FF7A1A", t1: "#2B1200", t2: "#5E2B00" }
+  B:   { fill: "rgba(10,228,72,0.10)", stroke: "rgba(10,228,72,0.45)", t1: "#8DF5AE", t2: "#4FB872" },
+  A:   { fill: "rgba(157,149,255,0.10)", stroke: "rgba(157,149,255,0.45)", t1: "#C9C4FF", t2: "#8C85DE" },
+  sel: { fill: "url(#selGrad)", stroke: "#FF8709", t1: "#1C0A05", t2: "#4A1C10" }
 };
 
 let sel = loadSel() || { num: 8, ring: "A" };
@@ -77,8 +77,19 @@ function compat(num, ring) {
 function fretE(s) { return (s - 4 + 12) % 12; }
 function fretA(s) { return (s - 9 + 12) % 12; }
 
+function addDefs(svg, id) {
+  const defs = el("defs", {});
+  const lg = el("linearGradient", { id: id, x1: "0", y1: "0", x2: "1", y2: "1" });
+  const s1 = el("stop", { offset: "0%", "stop-color": "#FF8709" });
+  const s2 = el("stop", { offset: "100%", "stop-color": "#FB64B6" });
+  lg.append(s1, s2);
+  defs.appendChild(lg);
+  svg.appendChild(defs);
+}
+
 function buildWheel() {
   const wheel = document.getElementById("wheel");
+  addDefs(wheel, "selGrad");
   for (let k = 1; k <= 12; k++) {
     const th = (k * 30 - 90) * Math.PI / 180;
     const gap = 1.7 * Math.PI / 180;
@@ -98,12 +109,12 @@ function buildWheel() {
       const [nx, ny] = pt(rn, th);
       const t1 = el("text", {
         x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "central",
-        "font-size": "15", "font-weight": "600"
+        "font-size": "17", "font-weight": "600"
       });
       t1.textContent = k + ring;
       const t2 = el("text", {
         x: nx, y: ny, "text-anchor": "middle", "dominant-baseline": "central",
-        "font-size": "12"
+        "font-size": "13"
       });
       t2.textContent = DATA[k][ring][0];
       g.append(p, t1, t2);
@@ -118,18 +129,18 @@ function buildWheel() {
   }
 
   const hub = el("circle", {
-    cx: CX, cy: CY, r: 64,
-    fill: "#141414", stroke: "#2C2C2E", "stroke-width": "1"
+    cx: CX, cy: CY, r: 66,
+    fill: "#161817", stroke: "#2A2D2B", "stroke-width": "1"
   });
   wheel.appendChild(hub);
 
   const hCode = el("text", {
     id: "hub-code", "class": "hub-text", x: CX, y: CY - 12, "text-anchor": "middle",
-    "dominant-baseline": "central", "font-size": "30", "font-weight": "600", fill: "#FFFFFF"
+    "dominant-baseline": "central", "font-size": "34", "font-weight": "600", fill: "#FFFCE1"
   });
   const hName = el("text", {
     id: "hub-name", "class": "hub-text", x: CX, y: CY + 16, "text-anchor": "middle",
-    "dominant-baseline": "central", "font-size": "14", fill: "#A1A1A6"
+    "dominant-baseline": "central", "font-size": "15", fill: "#A9A796"
   });
   wheel.append(hCode, hName);
 }
@@ -141,7 +152,7 @@ function update() {
     const isSel = key === sel.num + sel.ring;
     const isComp = compKeys.includes(key);
     const c = isSel ? COLORS.sel : COLORS[s.ring];
-    s.p.setAttribute("fill", isSel ? c.fill : (isComp ? c.fill.replace("0.12", "0.3") : c.fill));
+    s.p.setAttribute("fill", isSel ? c.fill : (isComp ? c.fill.replace("0.10", "0.28") : c.fill));
     s.p.setAttribute("stroke", c.stroke);
     s.t1.setAttribute("fill", c.t1);
     s.t2.setAttribute("fill", c.t2);
@@ -189,29 +200,30 @@ function dotX(f) { return f === 0 ? FX(0) - 12 : FX(f) - 12.5; }
 function buildFretStatic() {
   const svg = document.getElementById("fret");
   let s = "";
-  s += `<text x="14" y="${FYA}" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#A1A1A6">A</text>`;
-  s += `<text x="14" y="${FYE}" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#A1A1A6">E</text>`;
-  s += `<line x1="${FX(0) - 12}" y1="${FYA}" x2="${FX(12)}" y2="${FYA}" stroke="#3A3A3C" stroke-width="1.5"/>`;
-  s += `<line x1="${FX(0) - 12}" y1="${FYE}" x2="${FX(12)}" y2="${FYE}" stroke="#3A3A3C" stroke-width="2"/>`;
+  s += `<text x="14" y="${FYA}" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#A8AAA3">A</text>`;
+  s += `<text x="14" y="${FYE}" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#A8AAA3">E</text>`;
+  s += `<line x1="${FX(0) - 12}" y1="${FYA}" x2="${FX(12)}" y2="${FYA}" stroke="#3A3D3B" stroke-width="1.5"/>`;
+  s += `<line x1="${FX(0) - 12}" y1="${FYE}" x2="${FX(12)}" y2="${FYE}" stroke="#3A3D3B" stroke-width="2"/>`;
   for (let i = 0; i <= 12; i++) {
-    s += `<line x1="${FX(i)}" y1="${FYA - 18}" x2="${FX(i)}" y2="${FYE + 18}" stroke="#2C2C2E" stroke-width="${i === 0 ? 3 : 1}"/>`;
+    s += `<line x1="${FX(i)}" y1="${FYA - 18}" x2="${FX(i)}" y2="${FYE + 18}" stroke="#2A2D2B" stroke-width="${i === 0 ? 3 : 1}"/>`;
   }
   for (const i of [3, 5, 7, 9]) {
-    s += `<circle cx="${FX(i) - 12.5}" cy="${(FYA + FYE) / 2}" r="2.5" fill="#3A3A3C"/>`;
+    s += `<circle cx="${FX(i) - 12.5}" cy="${(FYA + FYE) / 2}" r="2.5" fill="#3A3D3B"/>`;
   }
-  s += `<circle cx="${FX(12) - 12.5}" cy="${FYA - 6}" r="2.5" fill="#3A3A3C"/>`;
-  s += `<circle cx="${FX(12) - 12.5}" cy="${FYE + 6}" r="2.5" fill="#3A3A3C"/>`;
+  s += `<circle cx="${FX(12) - 12.5}" cy="${FYA - 6}" r="2.5" fill="#3A3D3B"/>`;
+  s += `<circle cx="${FX(12) - 12.5}" cy="${FYE + 6}" r="2.5" fill="#3A3D3B"/>`;
   for (const i of [0, 3, 5, 7, 9, 12]) {
-    s += `<text x="${dotX(i)}" y="${FYE + 40}" text-anchor="middle" font-size="12" fill="#6E6E73">${i}</text>`;
+    s += `<text x="${dotX(i)}" y="${FYE + 40}" text-anchor="middle" font-size="12" fill="#6F716C">${i}</text>`;
   }
   svg.innerHTML = s;
+  addDefs(svg, "dotGrad");
 
   const mk = () => {
     const g = el("g", { "class": "dot" });
-    const c = el("circle", { cx: 0, cy: 0, r: 12, fill: "#FF7A1A" });
+    const c = el("circle", { cx: 0, cy: 0, r: 13, fill: "url(#dotGrad)" });
     const t = el("text", {
       x: 0, y: 0, "text-anchor": "middle", "dominant-baseline": "central",
-      "font-size": "11", "font-weight": "600", fill: "#2B1200"
+      "font-size": "12", "font-weight": "600", fill: "#1C0A05"
     });
     g.append(c, t);
     svg.appendChild(g);
