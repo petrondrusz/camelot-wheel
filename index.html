@@ -42,13 +42,13 @@
 
   <div class="mic-wrap">
     <button id="mic" class="mic" type="button" aria-pressed="false" aria-label="Detect key from microphone — tap to start, tap again to stop">
-      <span class="sonar"></span>
-      <span class="sonar"></span>
+      <span class="meter meter-left" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
       <svg class="mic-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
         <rect x="9" y="2" width="6" height="11" rx="3" fill="currentColor"/>
         <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         <path d="M12 18v3M8.5 21h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>
+      <span class="meter meter-right" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
     </button>
     <p id="mic-status" class="mic-status" role="status" aria-live="polite"></p>
   </div>

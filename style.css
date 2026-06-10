@@ -89,6 +89,7 @@ body {
 #wheel .hub-text {
   transform-box: fill-box;
   transform-origin: center;
+  transition: opacity 200ms var(--ease-out);
 }
 
 #wheel .hub-text.pop { animation: pop 380ms var(--ease-back); }
@@ -105,7 +106,7 @@ body {
 }
 
 /* Live layer — scales with the real input level (RMS), in tune with the
-   button's sonar so the icon visibly reacts to the music it's analysing. */
+   button's meter so the icon visibly reacts to the music it's analysing. */
 #wheel .hub-mic-rms {
   transform: scale(calc(1 + var(--rms, 0) * 0.16));
   transition: transform 80ms ease-out;
@@ -206,13 +207,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
   transition: transform 120ms var(--ease-out);
-  --rms: 0;
 }
 
 .mic:focus-visible {
@@ -222,29 +223,32 @@ body {
 
 .mic:active { transform: scale(0.98); }
 
-.mic-icon {
-  position: relative;
-  z-index: 1;
-}
+.mic-icon { flex: none; }
 
-.sonar {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: 0 0 0 2px rgba(251, 100, 182, 0.6);
+/* Volume meter — symmetric bars either side of the icon. Invisible until the
+   button is listening, so the idle button stays clean (space is reserved so
+   the icon never shifts). */
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
   opacity: 0;
-  z-index: 0;
-  pointer-events: none;
+  transition: opacity 240ms var(--ease-out);
 }
 
-.mic.listening .sonar { animation: sonar 1.8s var(--ease-out) infinite; }
-.mic.listening .sonar:nth-of-type(2) { animation-delay: 0.9s; }
-.mic.listening { transform: scale(calc(1 + 0.04 * var(--rms))); }
-
-@keyframes sonar {
-  0% { transform: scale(1); opacity: calc(0.12 + 0.45 * var(--rms)); }
-  100% { transform: scale(calc(1.25 + 0.55 * var(--rms))); opacity: 0; }
+.meter i {
+  display: block;
+  width: 4px;
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  transform: scaleY(0.1);
+  transform-origin: center;
+  will-change: transform;
 }
+
+.mic.listening .meter { opacity: 0.9; }
 
 .mic-status {
   min-height: 1.2em;
@@ -281,8 +285,7 @@ body {
   #wheel g.seg, #wheel g.seg path, .chip, #fret g.dot { transition: none; animation: none; }
   #wheel .hub-text.pop { animation: none; }
   .chip { animation: none; }
-  .mic.listening .sonar { animation: none; opacity: 0; }
-  .mic.listening { transform: none; }
+  .meter i { will-change: auto; } /* bars set to a static EQ glyph from JS */
   #wheel .hub-mic-rms { transform: none; transition: none; }
   #wheel #hub-mic.active .hub-mic-breath { animation: hub-mic-breath-rm 2.4s ease-in-out infinite; }
 }

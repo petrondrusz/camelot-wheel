@@ -135,15 +135,16 @@ function buildWheel() {
   });
   wheel.appendChild(hub);
 
-  const hCode = el("text", {
-    id: "hub-code", "class": "hub-text", x: CX, y: CY - 12, "text-anchor": "middle",
-    "dominant-baseline": "central", "font-size": "34", "font-weight": "600", fill: "#FFFCE1"
-  });
+  // Key name large + pure white on top, Camelot number smaller + muted below.
   const hName = el("text", {
-    id: "hub-name", "class": "hub-text", x: CX, y: CY + 16, "text-anchor": "middle",
-    "dominant-baseline": "central", "font-size": "15", fill: "#A9A796"
+    id: "hub-name", "class": "hub-text", x: CX, y: CY - 12, "text-anchor": "middle",
+    "dominant-baseline": "central", "font-size": "24", "font-weight": "600", fill: "#FFFFFF"
   });
-  wheel.append(hCode, hName);
+  const hCode = el("text", {
+    id: "hub-code", "class": "hub-text", x: CX, y: CY + 15, "text-anchor": "middle",
+    "dominant-baseline": "central", "font-size": "18", "font-weight": "500", fill: "#A9A796"
+  });
+  wheel.append(hName, hCode);
 
   // Mic icon shown in the hub while listening (replaces the "?"/text state).
   // Two nested groups: .hub-mic-rms (live level) wraps .hub-mic-breath (baseline).
@@ -284,6 +285,14 @@ let lastResult = null;       // { fav, corr }
 let hubCode = null, hubName = null, hubMic = null;
 let micBtn = null, micStatusEl = null;
 
+// Button analyzer — symmetric volume bars left/right of the icon.
+const N_BARS = 5;
+const BAND_EDGES = [60, 160, 400, 1000, 2500, 6000]; // 5 log-ish bands [Hz]
+let byteBuf = null;
+let bandRanges = null;           // [[startBin, endBin], …] computed per stream
+const barLevel = new Array(N_BARS).fill(0.15); // smoothed 0–1 per band
+let barsL = [], barsR = [];      // bar elements, outer→center
+
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function pearson(x, y) {
@@ -358,25 +367,28 @@ function popHub() {
 }
 
 // Show the animated mic icon in the hub instead of the code/name texts.
+// Used only for true silence / before the first reading.
 function showHubMic(on) {
   if (!hubMic) return;
   hubMic.style.display = on ? "" : "none";
   hubMic.classList.toggle("active", on);
   hubCode.style.display = on ? "none" : "";
   hubName.style.display = on ? "none" : "";
+  if (on) lastFav = null;
+  else { hubCode.style.opacity = "1"; hubName.style.opacity = "1"; }
 }
 
+// Live favorite — always shown while there's sound. Confidence (>= CONF)
+// only controls the visual certainty (dim = still settling) and the
+// release-lock; it must NOT gate the live display, or the key never shows.
 function setHub(fav, corr) {
-  if (corr >= CONF) {
-    showHubMic(false);
-    if (fav !== lastFav) { lastFav = fav; popHub(); }
-    hubCode.textContent = String(fav);
-    hubName.textContent = DATA[fav].A[0] + " / " + DATA[fav].B[0];
-  } else {
-    // Low confidence / silence — animated mic icon, no text.
-    lastFav = null;
-    showHubMic(true);
-  }
+  showHubMic(false);
+  const tentative = corr < CONF;
+  if (fav !== lastFav) { lastFav = fav; if (!tentative) popHub(); }
+  hubCode.textContent = String(fav);
+  hubName.textContent = DATA[fav].A[0] + " / " + DATA[fav].B[0];
+  hubCode.style.opacity = tentative ? "0.4" : "1";
+  hubName.style.opacity = tentative ? "0.4" : "1";
 }
 
 function analyzeChroma(dt) {
@@ -398,7 +410,7 @@ function analyzeChroma(dt) {
   // normalizace (max = 1); při tichu nic nepočítáme
   let mx = 0;
   for (let i = 0; i < 12; i++) if (chroma[i] > mx) mx = chroma[i];
-  if (mx <= 0) { lastResult = null; setHub(0, 0); return; }
+  if (mx <= 0) { lastResult = null; showHubMic(true); return; }
   for (let i = 0; i < 12; i++) chroma[i] /= mx;
 
   const a = Math.exp(-dt / EMA_TAU);
@@ -411,19 +423,49 @@ function analyzeChroma(dt) {
   setHub(fav, corr);
 }
 
+// Live volume meter in the button — per-band level with fast attack / slow
+// decay (VU feel). In near-silence the bars settle into a gentle idle wave so
+// the button always reads as active. Drives transforms directly (no CSS vars
+// on a parent) to avoid style recalc on the bars' siblings.
+function renderMeter(now) {
+  if (!byteBuf || !bandRanges) return;
+  analyser.getByteFrequencyData(byteBuf);
+  let active = false;
+  for (let b = 0; b < N_BARS; b++) {
+    const [lo, hi] = bandRanges[b];
+    let s = 0;
+    for (let i = lo; i < hi; i++) s += byteBuf[i];
+    let v = Math.pow(s / ((hi - lo) * 255), 0.55); // 0–1, gamma lifts quiet detail
+    if (v > 0.07) active = true;
+    const k = v > barLevel[b] ? 0.55 : 0.12;       // fast attack, slow decay
+    barLevel[b] += (v - barLevel[b]) * k;
+  }
+  if (!active) {
+    for (let b = 0; b < N_BARS; b++) {
+      const idle = 0.16 + 0.1 * Math.sin(now / 440 + b * 0.7);
+      barLevel[b] += (idle - barLevel[b]) * 0.1;
+    }
+  }
+  for (let b = 0; b < N_BARS; b++) {
+    const sc = "scaleY(" + (0.1 + barLevel[b] * 0.9).toFixed(3) + ")";
+    if (barsR[b]) barsR[b].style.transform = sc;
+    if (barsL[b]) barsL[b].style.transform = sc; // mirrored layout via DOM order
+  }
+}
+
 function loop() {
   rafId = requestAnimationFrame(loop);
   if (!analyser) return;
-  // RMS každý frame → plynulý sonar řízený skutečnou hlasitostí
+  const now = performance.now();
+  if (!reduceMotion) renderMeter(now);
+
+  // Overall level → reactive scale of the hub mic icon.
   analyser.getFloatTimeDomainData(timeBuf);
   let sum = 0;
   for (let i = 0; i < timeBuf.length; i++) sum += timeBuf[i] * timeBuf[i];
   const rms = Math.sqrt(sum / timeBuf.length);
-  const pulse = Math.min(1, rms * 8).toFixed(3);
-  micBtn.style.setProperty("--rms", pulse);
-  if (hubMic) hubMic.style.setProperty("--rms", pulse);
+  if (hubMic) hubMic.style.setProperty("--rms", Math.min(1, rms * 8).toFixed(3));
 
-  const now = performance.now();
   if (now - lastAnalyzeT >= ANALYZE_MS) {
     const dt = lastAnalyzeT ? (now - lastAnalyzeT) / 1000 : 1 / 15;
     lastAnalyzeT = now;
@@ -448,8 +490,7 @@ function startListening() {
   micStatus("");
   micBtn.classList.add("listening");
   micBtn.setAttribute("aria-pressed", "true");
-  micBtn.style.setProperty("--rms", "0");
-  setHub(0, 0); // show "listening…" immediately
+  showHubMic(true); // mic icon until the first reading arrives
 
   // AudioContext vytvořit/resumnout synchronně v rámci gesta (iOS)
   try {
@@ -473,12 +514,21 @@ function startListening() {
     analyser.smoothingTimeConstant = 0;
     freqBuf = new Float32Array(analyser.frequencyBinCount);
     timeBuf = new Float32Array(analyser.fftSize);
+    // Meter band → FFT bin ranges for this stream's sample rate.
+    byteBuf = new Uint8Array(analyser.frequencyBinCount);
+    const binHz = audioCtx.sampleRate / analyser.fftSize;
+    bandRanges = [];
+    for (let b = 0; b < N_BARS; b++) {
+      const lo = Math.max(1, Math.floor(BAND_EDGES[b] / binHz));
+      const hi = Math.min(analyser.frequencyBinCount - 1, Math.ceil(BAND_EDGES[b + 1] / binHz));
+      bandRanges.push([lo, Math.max(lo + 1, hi)]);
+    }
     micSrc.connect(analyser);
     loop();
   }).catch(() => {
     listening = false;
     micBtn.classList.remove("listening");
-    micBtn.style.setProperty("--rms", "0");
+    micBtn.setAttribute("aria-pressed", "false");
     micStatus("Microphone unavailable");
   });
 }
@@ -488,7 +538,6 @@ function stopListening() {
   listening = false;
   micBtn.classList.remove("listening");
   micBtn.setAttribute("aria-pressed", "false");
-  micBtn.style.setProperty("--rms", "0");
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micSrc) { try { micSrc.disconnect(); } catch (e) {} micSrc = null; }
@@ -530,6 +579,19 @@ function initMic() {
   hubCode = document.getElementById("hub-code");
   hubName = document.getElementById("hub-name");
   hubMic = document.getElementById("hub-mic");
+
+  // barsR: center→outer maps to band 0→4. barsL is reversed so the same band
+  // sits at the mirrored position on the left (bass near center, treble outside).
+  barsR = Array.from(micBtn.querySelectorAll(".meter-right i"));
+  barsL = Array.from(micBtn.querySelectorAll(".meter-left i")).reverse();
+  if (reduceMotion) {
+    const stat = [0.45, 0.7, 1, 0.7, 0.45]; // static EQ glyph, no motion
+    for (let b = 0; b < N_BARS; b++) {
+      const sc = "scaleY(" + stat[b] + ")";
+      if (barsR[b]) barsR[b].style.transform = sc;
+      if (barsL[b]) barsL[b].style.transform = sc;
+    }
+  }
 
   // Single tap toggles listening on/off — hands stay free for the guitar.
   // A native <button> also fires "click" on Enter/Space, so this covers keyboard too.
