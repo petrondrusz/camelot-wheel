@@ -24,11 +24,15 @@
 - **Ověřeno simulací:** HC kolísání → lock drží; reálná změna 10A→4A → změna v 4.0 s;
   kompat. změna 10A→11A → schválně nehlásí (pomalý integrátor tam doplave).
 
-**Co oprava NEřeší (a proč vědomě):** zda se Hotel California ustálí na 10A nebo
-relativní 10B (D dur) — tahle píseň je tonálně sporná i mezi teoretiky (silně těží
-relativní dur i mollovou dominantu). Obojí je DJ-kompatibilní (relativní pár),
-takže to neopravuji — riziko regrese na Rolling in the Deep / Billie Jean.
-Zapsáno do DETECTION.md §11.
+**Dovětek z reálného testu (v12):** Hotel California je hlubší případ, než se zdálo
+— **modální směs H nat. moll ⊕ H dorská** (song hraje G i G# současně: Em/G vs.
+E dur/C#m). Chroma proto přejíždí celý „křížkový" oblouk **9A–10A–11B–12B**, ne jen
+úzké okolí. Tělo songu koreluje s dorskou stranou silněji (12B r0.76) než s 10A,
+takže to **bezpečně neřeší žádná heuristika** (kategorie SNA): cokoli „chytřejšího"
+zamrzne na 12B, ne na 10A; a globální neleaky akumulátor (co by udržel úvodní Bm)
+by rozbil detekci změny písně. v12 hradlo tlumí jen úzké kolísání, ne tenhle široký
+oblouk. **Zapsáno do §11 jako známé omezení.** v12 zůstává (čistý přínos pro úzké
+případy). Otevřená myšlenka: manuální „freeze/hold" tap na hub (UX, ne detekce).
 
 ---
 

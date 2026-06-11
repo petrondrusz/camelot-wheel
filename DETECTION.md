@@ -305,15 +305,24 @@ předpoklad poruší, appka trefí centrum, ale mód/číslo může minout:
   správně zachránilo Billie Jean (12A r0.47 → 11A r0.45) — cíl o ~0.02–0.03
   nižší chroma, mnohem vyšší keyFit. keyFit ty dva případy nerozliší, takže
   zpřísnění gate by rozbilo Billie Jean.
-- **Tonálně nejednoznačná píseň** (Eagles „Hotel California" = H moll 10A): pravá
-  tónina je sporná i mezi teoretiky — song silně těží relativní dur (D) i mollovou
-  dominantu (F♯m), takže chroma legitimně bloudí mezi **10A ↔ 10B ↔ 11A**. To jsou
-  všechno **kompatibilní sousedi**, takže od v12 je **zámek stabilní** (§9 hradlo
-  na `camDist`) — nepřeskakuje a popisek se zpřesňuje na místě. **Co zůstává:** zda
-  se ustálí na 10A, nebo relativní 10B (D dur), záleží na pasáži — §8b občas
-  překlopí na relativní dur, když akordová stopa D dur převáží mollovou toniku Bm
-  (detektor moll toniku podhodnocuje). Obojí je pro DJ kompatibilní (relativní pár),
-  takže se to **neopravuje** — riziko regrese na Rolling in the Deep / Billie Jean.
+- **Modální směs** (Eagles „Hotel California" = H moll 10A): song **současně
+  používá G i G#** — vedle nat. moll akordů (Em, G = vyžadují G) hraje i dorské
+  (E dur, C#m = vyžadují G#). Je to tedy H nat. moll ⊕ H dorská. Chroma proto
+  legitimně přejíždí mezi dvěma stranami kola:
+  - **10A** (strana s G: Em, G) — chytne se na začátku (intro je nejčistší Bm);
+  - **9A / 11A / 11B / 12B** (strana s G#: F♯m, A, D, E dur, C♯m) — tělo songu.
+
+  **Nejde to bezpečně opravit** (kategorie Seven Nation Army):
+  - Tělo songu koreluje s **dorskou** stranou *silněji* (12B r0.76) než s nat. moll,
+    takže žádná „chytřejší" heuristika by netrefila 10A — zamrzla by na 12B/11B.
+  - To, co by 10A udrželo, je **globální (neleaky) akumulátor** vážící úvodní Bm
+    přes celý track — jenže ten by rozbil detekci změny písně (§9 staví na leaky
+    20s paměti, aby nová píseň přebila starou). Leaky ↔ globální je principiální
+    kompromis; appka je mic-DJ nástroj, takže drží leaky.
+  - v12 hradlo (`camDist > 1`) tlumí jen *úzké* kolísání (sousední čísla); tenhle
+    dorský oblouk je široký (čísla 9–12), takže přes něj `changing` občas přeskočí
+    a zámek se na chvíli pustí. Schválně nerozšiřuju gate — `camDist > 2` by už
+    znamenalo, že se skoro žádná reálná změna písně nedetekuje.
 
 Tyhle se **záměrně neřeší** — principiální fix (mixolydian profil) by zaváděl
 nové záměny (A-mix a D dur mají identické noty) a riskoval rozladění čistých
@@ -353,7 +362,6 @@ songů. Bereme: *root spolehlivý, mód best-effort.*
 | Bob Marley – Three Little Birds | 11B (A) | čistá dur + A↔E kvinta |
 | Oasis – Don't Look Back in Anger | 8B (C) | C↔G kvinta (keyFit override) |
 | Michael Jackson – Billie Jean | 11A (F♯m) | nízká korelace (zámek po 30 s) + III-lean mód |
-| Eagles – Hotel California | 10A (Bm) | stabilita zámku: kolísání mezi kompat. sousedy (Bm↔F♯m↔D) nesmí odemykat |
 
 **Postup:** pusť slušně nahlas, nech doběhnout přes `MIN_SPIN_MS` + smyčku až na
 `locked`, čti řádek `chroma → final`. Restart tlačítka (nebo 2 s pauza)
