@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-06-11 (2) — LATCH: zamčená odpověď drží (v13) ⭐ přerámování účelu
+
+**Stav buildu:** `v13` · live na Vercelu.
+
+### Klíčové přerámování (od uživatele)
+
+Účel appky **NENÍ** DJ-přesnost, ale: *„nehudebník bez cvičeného sluchu chce rychle
+dostat JEDNU tóninu, které může věřit, a jamovat se songem (kytara)."* → **Stabilita
+a jedna důvěryhodná odpověď > teoretická preciznost.** Manuální „freeze" tap je
+k ničemu (kdo neslyší tóninu, neví, kdy zmáčknout) — appka musí sama dát stabilní
+odpověď.
+
+### Co jsme udělali — latch s hradlem na „zhroucení domácí tóniny"
+
+- **Princip:** jakmile se jednou zamkne, **zalatchuj** favorita (`lockFav`/`lockMode`)
+  a drž ho v hubu i na hmatníku. Pusť latch **jen při potvrzené změně písně**.
+- **Co odlišuje vnitropísňovou odbočku od změny písně:** přežije-li **vlastní
+  chroma podpora zamčené tóniny**. Modální odbočka (HC dorská část) → domácí Bm má
+  pořád skoro všechny noty → `slow.raw[lockFav]` drží. Nová píseň → noty staré
+  tóniny zmizí → `raw` se zhroutí. `changing` se proto spustí jen při
+  `camDist > 1` **A ZÁROVEŇ** `slow.raw[lockFav] < CONF_LOCK_MIN` (0.4).
+- **Ověřeno simulací (4 scénáře):** HC dorská odbočka (raw10=0.6) drží 10A · reálná
+  změna (raw10→0.25) pustí ve 4 s · etalon jednotónová drží · hraniční (0.38) pustí.
+- **Důsledek pro Hotel California:** chytí úvodní čistý Bm (10A) a **drží ho** přes
+  dorské pasáže místo úletu na 12B (E dur). B moll pentatonika sedí na celý song →
+  přesně ta použitelná odpověď, kterou nehudebník chce.
+
+### Filozofická poznámka
+
+Latch vědomě přebíjí i sebevědomější chroma živého framu (12B r0.76). To **není**
+porušení §0 — §0 platí pro *detekci*; latch je vrstva **stability** nad ní. Detekce
+najde tóninu, latch rozhoduje, jak agresivně přepisovat už ukázanou odpověď.
+
+### Reálný stav HC (predikce, čeká na potvrzení)
+
+Funguje to za předpokladu, že `raw[10]` (H moll) v dorských pasážích zůstane nad 0.4.
+H moll sdílí 6/7 not s H dorskou (jen G vs G#), takže by mělo. **Příští test: pustit
+HC na v13 a ověřit, že 10A drží.**
+
+---
+
+## 2026-06-11 (1) — stabilita zámku, camDist gate (v12)
+
+(viz níž, ponecháno; v12 hradlo `camDist > 1` je základ, na kterém v13 latch staví)
+
+---
+
 ## 2026-06-11 — stabilita zámku u tonálně bohatých songů (v12)
 
 **Stav buildu:** `v12` · vše live na Vercelu.
