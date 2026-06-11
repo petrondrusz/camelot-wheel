@@ -413,6 +413,37 @@ body {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Page-load bloom: the 12+12 wheel segments fade-scale in from the centre
+   outward — inner ring (A) leads, outer (B) trails, staggered around the circle
+   by --bd (set per segment in buildWheel). They settle to their resting dim via
+   the existing .seg opacity transition once body.intro is removed (~1.7 s after
+   load, or the moment listening starts). The title gets a one-shot sheen sweep.
+   All gated to no-preference, so reduced-motion users just see the static wheel. */
+@media (prefers-reduced-motion: no-preference) {
+  body.intro #wheel g.seg {
+    animation: seg-bloom 600ms var(--ease-out) var(--bd, 0ms) both;
+  }
+  body.intro .head .grad {
+    background-image:
+      linear-gradient(110deg, transparent 38%, rgba(255, 255, 255, 0.85) 50%, transparent 62%),
+      linear-gradient(94deg, var(--pink) 0%, #FFB454 55%, var(--orange) 100%);
+    background-size: 230% 100%, 100% 100%;
+    background-position: 200% 0, 0 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: title-sheen 850ms var(--ease-out) 620ms both;
+  }
+}
+
+@keyframes seg-bloom {
+  from { opacity: 0; transform: scale(0.86); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes title-sheen {
+  to { background-position: -130% 0, 0 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #wheel g.seg, #wheel g.seg path, .chip, #fret g.dot { transition: none; animation: none; }
   #wheel .hub-text.pop { animation: none; }

@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-06-11 (5) — Load animace: bloom kola od středu (v16) ✨
+
+**Stav buildu:** `v16` · live na Vercelu.
+
+### Zadání
+
+Uživatel chtěl „fancy GSAP animaci při načtení na pár vteřin". **GSAP zamítnut** —
+externí knihovna porušuje tvrdé pravidlo (jen 3 soubory, žádné knihovny, žádný build);
+bezpečnostně je GSAP ✅ ok, ale architektonicky ne. Uděláno **čistě CSS/SVG**, vibe
+„rozkvět od středu" (zvoleno uživatelem).
+
+### Co jsme udělali (jen `style.css` + `app.js`)
+
+- **`seg-bloom`**: 12+12 segmentů kola fade-scale (opacity 0→1, scale 0.86→1) se
+  staggerem `--bd` — vnitřní prstenec A vede, vnější B o 150 ms za ním, kolem dokola
+  po `k` → rozkvět od středu ven. Po doběhu se přes **existující** `transition:
+  opacity 180ms` usadí na klidovou tlumenost (žádný skok).
+- **`title-sheen`**: jednorázový lesklý přejezd přes gradient „Wheel".
+- **Spouštění:** `body.intro` přidáno při loadu (jen když `!reduceMotion`), sundáno
+  po 1700 ms **nebo** při startu poslechu (`startListening`), ať `both`-fill held stav
+  nedrží zpět živou heatmapu.
+- **Reduced-motion:** celé pod `@media (prefers-reduced-motion: no-preference)` →
+  uživatelé s omezeným pohybem vidí statické kolo.
+- Ease tokeny už v projektu (`--ease-out: cubic-bezier(0.23,1,0.32,1)`), match
+  doporučení pro UI animace. Timing ověřen: nejdelší segment doběhne 1442 ms, sheen
+  1470 ms, intro sundáno 1700 ms → vše stihne.
+
+### Pozn.
+
+Animace není součást detekce → do DETECTION.md nepatří (jen bump verze v16).
+Etalon ani detekce nedotčeny.
+
+---
+
 ## 2026-06-11 (4) — REVERT latche (v15): vrácení adaptivity ↩️
 
 **Stav buildu:** `v15` · live na Vercelu.

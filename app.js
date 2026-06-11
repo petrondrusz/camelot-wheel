@@ -141,6 +141,9 @@ function buildWheel() {
       g.addEventListener("keydown", e => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
       });
+      // Page-load bloom delay: inner ring (A) leads, outer (B) trails by 150 ms,
+      // staggered around the circle by k → the wheel blooms from the centre out.
+      g.style.setProperty("--bd", (340 + (ring === "A" ? 0 : 150) + (k - 1) * 32) + "ms");
       wheel.appendChild(g);
       segs[k + ring] = { g, p, t1, t2, ring, num: k };
     }
@@ -292,7 +295,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v15"; // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v16"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const CONF_LOCK_MIN = 0.4; // po dlouhém stabilním držení (LOCK_FALLBACK_MS) stačí k zámku
@@ -950,6 +953,7 @@ function startListening() {
     return;
   }
   listening = true;
+  document.body.classList.remove("intro"); // end the load bloom; live heatmap takes over
   lockedNum = null;
   silenceMs = 0;
   lastAnalyzeT = 0;
@@ -1136,3 +1140,11 @@ buildWheel();
 buildFretStatic();
 update();
 initMic();
+
+// One-shot page-load bloom (segments cascade in from the centre). Skipped for
+// reduced motion; cleared on a timer or the moment listening starts so the live
+// heatmap isn't held back by the animation's held end-state.
+if (!reduceMotion) {
+  document.body.classList.add("intro");
+  setTimeout(() => document.body.classList.remove("intro"), 1700);
+}
