@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-06-11 — stabilita zámku u tonálně bohatých songů (v12)
+
+**Stav buildu:** `v12` · vše live na Vercelu.
+
+### Co jsme udělali
+
+**Detekce změny songu jen při harmonicky vzdáleném favoritovi** — `app.js`
+- **Symptom (Eagles „Hotel California", H moll 10A):** zámek držel jen pár vteřin,
+  pak spadl a hledal znovu — pokaždé na jiné tónině (11A F#m → 11B → 10B D dur).
+- **Příčina:** detektor změny písně (`disagreeMs/CHANGE_MS`) bral přirozené
+  harmonické kolísání mezi **10A↔11A↔10B** jako *změnu songu*. Jenže to jsou
+  **Camelot-kompatibilní sousedi** (relativní = stejné číslo, kvinta = ±1).
+  Každý úlet > 4 s = falešná „změna" → odemkne → hledá znovu.
+- **Oprava:** „odpor" se počítá jen při `camDist(heat.fav, settled) > 1`. Kolísání
+  mezi kompatibilními sousedy zámek **neodemkne** — popisek se zpřesňuje na místě.
+  Skutečná změna (≥ 2 čísla = ≥ 2 kvinty) se pořád hlásí v 4 s.
+- **Ověřeno simulací:** HC kolísání → lock drží; reálná změna 10A→4A → změna v 4.0 s;
+  kompat. změna 10A→11A → schválně nehlásí (pomalý integrátor tam doplave).
+
+**Co oprava NEřeší (a proč vědomě):** zda se Hotel California ustálí na 10A nebo
+relativní 10B (D dur) — tahle píseň je tonálně sporná i mezi teoretiky (silně těží
+relativní dur i mollovou dominantu). Obojí je DJ-kompatibilní (relativní pár),
+takže to neopravuji — riziko regrese na Rolling in the Deep / Billie Jean.
+Zapsáno do DETECTION.md §11.
+
+---
+
 ## 2026-06-10 — revert bas-rozhodčího, zámek hustých songů, stabilita módu
 
 **Stav buildu:** `v11` · vše live na Vercelu · pracovní strom čistý.

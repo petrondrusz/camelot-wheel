@@ -292,7 +292,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v11"; // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v12"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const CONF_LOCK_MIN = 0.4; // po dlouhém stabilním držení (LOCK_FALLBACK_MS) stačí k zámku
@@ -676,7 +676,17 @@ function analyzeChroma(dt) {
   // Song-change detection: if the short-term key confidently disagrees with the
   // settled key for several seconds, speed the long integrator up to re-lock.
   const settled = keyEma ? scoreKeys(keyEma).fav : null;
-  if (settled !== null && heat.fav !== settled && heat.corr > 0.5) disagreeMs += dt * 1000;
+  // Only a HARMONICALLY DISTANT short-term favorite signals a real song change.
+  // Wander among Camelot-compatible neighbours — relative key (same number) and
+  // perfect-fifth (±1 number) — is normal intra-song motion, not a new track.
+  // Counting it as a change made tonally rich songs churn (Hotel California drifts
+  // Bm↔F#m↔D = 10A↔11A↔10B, all compatible): lock for a few seconds, unlock,
+  // re-search. Gating by circular Camelot distance > 1 lets the lock HOLD and the
+  // label refine in place. (A genuine change two fifths away still trips it; a
+  // change INTO a compatible key isn't urgent — the slow integrator drifts there.)
+  const camDist = (a, b) => { const d = Math.abs(a - b) % 12; return Math.min(d, 12 - d); };
+  const far = settled !== null && camDist(heat.fav, settled) > 1;
+  if (far && heat.corr > 0.5) disagreeMs += dt * 1000;
   else disagreeMs = Math.max(0, disagreeMs - dt * 2000);
   const changing = disagreeMs > CHANGE_MS;
 
