@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-06-11 (6) — Intro „radar sweep bloom" (v17) ✨✨
+
+**Stav buildu:** `v17` · live na Vercelu. Uživatel chtěl intro „složitější, víc wow".
+
+### Vrstvená sekvence (stále jen CSS/SVG, žádná knihovna)
+
+1. **Hub ping** (`#intro-pulse`, nový SVG kroužek) — prstenec vyletí ze středu
+   (scale 0.92→2.7, fade), kickoff. 40–800 ms.
+2. **Radar paprsek** (`.intro-sweep`, nový `<div>` v `.wheel-wrap`) — rotující
+   `conic-gradient` se světlou náběžnou hranou, `mask` na prstenec, `mix-blend:
+   screen`, otočí ~1.3× s ease-out decelerací a zhasne. 140–1440 ms.
+3. **Segmenty v jeho stopě** — angle-based stagger (`--bd = 230 + ringLag + (k-1)*72`,
+   po směru hodin) + **pružinový overshoot** (`--ease-back`, scale 0.82→1). →1582 ms.
+4. **Title sheen** posunut na konec (1050–1950 ms).
+- `body.intro` sundáno po **2050 ms** nebo při startu poslechu. Vše pod
+  `prefers-reduced-motion: no-preference`. Časování ověřeno (vše < 2050 ms).
+
+### Soubory
+
+`index.html` (+1 div), `style.css` (radar/ping/keyframes), `app.js` (ping kroužek,
+angle-based `--bd`, okno 2050 ms). Detekce/etalon nedotčeny.
+
+### Mimochodem
+
+Uživatel potvrdil: **detekce trefuje songy dobře, i hardcore.** Baseline drží.
+
+---
+
 ## 2026-06-11 (5) — Load animace: bloom kola od středu (v16) ✨
 
 **Stav buildu:** `v16` · live na Vercelu.

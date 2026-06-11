@@ -56,6 +56,27 @@ body {
 .wheel-wrap {
   display: flex;
   justify-content: center;
+  position: relative;
+}
+
+/* Radar sweep overlay for the page-load intro — a rotating conic light beam that
+   blooms the segments in its wake. Visible only under body.intro (no-preference). */
+.intro-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transform: rotate(-100deg);
+  background: conic-gradient(from 0deg,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 143, 232, 0) 284deg,
+    rgba(255, 143, 232, 0.32) 332deg,
+    rgba(255, 180, 84, 0.8) 356deg,
+    rgba(255, 255, 255, 0.95) 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 32%, #000 38% 99%, transparent 100%);
+  mask: radial-gradient(circle, transparent 0 32%, #000 38% 99%, transparent 100%);
+  mix-blend-mode: screen;
 }
 
 #wheel {
@@ -421,7 +442,13 @@ body {
    All gated to no-preference, so reduced-motion users just see the static wheel. */
 @media (prefers-reduced-motion: no-preference) {
   body.intro #wheel g.seg {
-    animation: seg-bloom 600ms var(--ease-out) var(--bd, 0ms) both;
+    animation: seg-bloom 520ms var(--ease-back) var(--bd, 0ms) both;
+  }
+  body.intro .intro-sweep {
+    animation: sweep-spin 1300ms var(--ease-out) 140ms both;
+  }
+  body.intro #wheel #intro-pulse {
+    animation: hub-pulse 760ms var(--ease-out) 40ms both;
   }
   body.intro .head .grad {
     background-image:
@@ -431,17 +458,40 @@ body {
     background-position: 200% 0, 0 0;
     -webkit-background-clip: text;
     background-clip: text;
-    animation: title-sheen 850ms var(--ease-out) 620ms both;
+    animation: title-sheen 900ms var(--ease-out) 1050ms both;
   }
 }
 
+/* Segments pop in with a spring overshoot, in the radar sweep's wake. */
 @keyframes seg-bloom {
-  from { opacity: 0; transform: scale(0.86); }
+  from { opacity: 0; transform: scale(0.82); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* Radar light beam — fades in, sweeps ~1.3 turns with ease-out decel, fades out. */
+@keyframes sweep-spin {
+  0% { opacity: 0; transform: rotate(-100deg); }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(360deg); }
+}
+
+/* Kickoff ping — a ring expands from the hub and fades. */
+@keyframes hub-pulse {
+  0% { opacity: 0.6; transform: scale(0.92); }
+  100% { opacity: 0; transform: scale(2.7); }
 }
 
 @keyframes title-sheen {
   to { background-position: -130% 0, 0 0; }
+}
+
+/* Resting state of the intro-only pulse ring (invisible after the intro). */
+#wheel #intro-pulse {
+  opacity: 0;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

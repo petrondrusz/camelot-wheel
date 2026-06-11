@@ -141,9 +141,9 @@ function buildWheel() {
       g.addEventListener("keydown", e => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
       });
-      // Page-load bloom delay: inner ring (A) leads, outer (B) trails by 150 ms,
-      // staggered around the circle by k → the wheel blooms from the centre out.
-      g.style.setProperty("--bd", (340 + (ring === "A" ? 0 : 150) + (k - 1) * 32) + "ms");
+      // Page-load bloom delay: cascade CLOCKWISE by k so segments pop in the radar
+      // sweep's wake; inner ring (A) leads its outer (B) partner by a hair.
+      g.style.setProperty("--bd", (230 + (ring === "A" ? 0 : 40) + (k - 1) * 72) + "ms");
       wheel.appendChild(g);
       segs[k + ring] = { g, p, t1, t2, ring, num: k };
     }
@@ -154,6 +154,13 @@ function buildWheel() {
     fill: "#161817", stroke: "#2A2D2B", "stroke-width": "1"
   });
   wheel.appendChild(hub);
+
+  // Intro-only kickoff ping: a ring that expands from the hub on page load.
+  const pulse = el("circle", {
+    id: "intro-pulse", cx: CX, cy: CY, r: 66,
+    fill: "none", stroke: "url(#selGrad)", "stroke-width": "2"
+  });
+  wheel.appendChild(pulse);
 
   // Confidence ring around the hub: spins while searching, locks as a
   // highlighted gradient border once the detection is confident.
@@ -295,7 +302,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v16"; // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v17"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const CONF_LOCK_MIN = 0.4; // po dlouhém stabilním držení (LOCK_FALLBACK_MS) stačí k zámku
@@ -1146,5 +1153,5 @@ initMic();
 // heatmap isn't held back by the animation's held end-state.
 if (!reduceMotion) {
   document.body.classList.add("intro");
-  setTimeout(() => document.body.classList.remove("intro"), 1700);
+  setTimeout(() => document.body.classList.remove("intro"), 2050);
 }
