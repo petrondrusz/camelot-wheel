@@ -292,7 +292,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v14"; // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v15"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const CONF_LOCK_MIN = 0.4; // po dlouhém stabilním držení (LOCK_FALLBACK_MS) stačí k zámku
@@ -343,8 +343,6 @@ let emaChroma = null;   // short EMA → heatmap
 let keyEma = null;      // long leaky integrator → overall key
 let analyzedMs = 0;     // accumulated time of actual (non-silent) analysis
 let disagreeMs = 0;     // how long the short-term key has fought the settled one
-let lockFav = null;     // latched answer once locked — held steady for jamming
-let lockMode = null;    // latched mode of lockFav
 let levelDb = null;     // smoothed peak level → stable weak-signal hint
 let weakWarn = false;   // current weak-signal warning state (hysteresis)
 let silenceMs = 0;      // run of silence → auto-restart on a pause
@@ -677,21 +675,17 @@ function analyzeChroma(dt) {
 
   // Song-change detection: if the short-term key confidently disagrees with the
   // settled key for several seconds, speed the long integrator up to re-lock.
-  const slow = keyEma ? scoreKeys(keyEma) : null;
-  const settled = slow ? slow.fav : null;
-  // What separates a SONG CHANGE from a within-song excursion is whether the
-  // LOCKED key's own support survives. A modal excursion (Hotel California's dorian
-  // sections, AC/DC mixolydian) keeps the home tonic's notes present, so its slow
-  // correlation holds; a real new song doesn't contain the old tonic's notes, so it
-  // collapses. Require BOTH a harmonically DISTANT short-term favorite (camDist > 1
-  // — relative & perfect-fifth neighbours are normal intra-song motion) AND the
-  // locked key having lost its footing. Without the collapse gate, tonally rich
-  // songs churned forever (lock 10A → drift to 12B → unlock → re-search …).
+  const settled = keyEma ? scoreKeys(keyEma).fav : null;
+  // Only a HARMONICALLY DISTANT short-term favorite signals a real song change.
+  // Wander among Camelot-compatible neighbours — relative key (same number) and
+  // perfect-fifth (±1 number) — is normal intra-song motion, not a new track.
+  // Counting it as a change made tonally rich songs churn (lock for a few seconds,
+  // unlock, re-search). Gating by circular Camelot distance > 1 lets the lock HOLD
+  // and the label refine in place. (A genuine change two fifths away still trips it;
+  // a change INTO a compatible key isn't urgent — the slow integrator drifts there.)
   const camDist = (a, b) => { const d = Math.abs(a - b) % 12; return Math.min(d, 12 - d); };
   const far = settled !== null && camDist(heat.fav, settled) > 1;
-  const lockedRaw = (lockFav !== null && slow) ? slow.raw[lockFav] : null;
-  const incumbentGone = lockedRaw === null || lockedRaw < CONF_LOCK_MIN; // 0.4
-  if (far && incumbentGone && heat.corr > 0.5) disagreeMs += dt * 1000;
+  if (far && heat.corr > 0.5) disagreeMs += dt * 1000;
   else disagreeMs = Math.max(0, disagreeMs - dt * 2000);
   const changing = disagreeMs > CHANGE_MS;
 
@@ -734,25 +728,11 @@ function analyzeChroma(dt) {
     favNum = ((favNum0 + 8) % 12) + 1; mode = "min"; decided = true;
   }
 
-  // A confirmed song change drops the latch so the next song is detected fresh.
-  if (changing) { lockFav = null; lockMode = null; }
-  // While latched, report the held key (steady answer to jam to) instead of the
-  // live favorite that wanders across modal/compatible neighbours. Its confidence
-  // is the locked key's own live chroma support — if that survives, the hub keeps
-  // its lock; if it collapses the change detector above releases the latch.
-  let outFav = favNum, outMode = mode, outCorr = corr, outDecided = decided;
-  if (lockFav !== null) {
-    outFav = lockFav; outMode = lockMode;
-    outCorr = key.raw[lockFav]; outDecided = true;
-  }
-
-  lastResult = { fav: outFav, corr: outCorr, mode: outMode };
-  applyHeatmap(heat.norm, outFav);     // wheel reacts to chords, key pair pulses
-  setHub(outFav, outCorr, outMode, outDecided, changing);
-  // Capture the latch the moment the hub first commits to a lock this frame.
-  if (lockFav === null && ringKey.startsWith("locked")) { lockFav = outFav; lockMode = outMode; }
+  lastResult = { fav: favNum, corr, mode };
+  applyHeatmap(heat.norm, favNum);     // wheel reacts to chords, key pair pulses
+  setHub(favNum, corr, mode, decided, changing);
   // Live fretboard — root of the more probable mode of the pair (minor vs major).
-  const [rNote, rSemi] = DATA[outFav][outMode === "min" ? "A" : "B"];
+  const [rNote, rSemi] = DATA[favNum][mode === "min" ? "A" : "B"];
   updateFret(fretE(rSemi), fretA(rSemi), rNote.replace("m", ""));
 
   // Live chords — short window, detected UNCONSTRAINED (any of the 24 triads,
@@ -947,8 +927,6 @@ function resetDetection() {
   chordChroma = null;
   analyzedMs = 0;
   disagreeMs = 0;
-  lockFav = null;
-  lockMode = null;
   levelDb = null;
   weakWarn = false;
   chordCur = null;

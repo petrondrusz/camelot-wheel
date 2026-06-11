@@ -5,6 +5,37 @@
 
 ---
 
+## 2026-06-11 (4) — REVERT latche (v15): vrácení adaptivity ↩️
+
+**Stav buildu:** `v15` · live na Vercelu.
+
+### Proč
+
+Uživatel hlásil regresi: *„co dřív dobře určovalo, teď se plete i tam, kde to
+fungovalo. Kontrolní songy ale drží."* To přesně sedí na **latch (v13)**:
+zmrazil **první** lock a držel ho. U písní, co se dřív samy opravily (chroma
+dosbírala signál), latch tu **ranní chybu zabetonoval** → regrese. Kontrolní songy
+„drží", protože se zamknou správně hned napoprvé (tam latch nemá co pokazit).
+
+### Co jsme udělali
+
+- **Revertován celý latch** (`lockFav`/`lockMode`, incumbent-collapse hradlo
+  v detektoru změny, latch na výstupu). Detekce zpět na **ověřené v12 chování**
+  (`camDist` anti-churn zůstává). Čistý revert — `grep` potvrdil 0 zbytků.
+- **Keep-alive (v14) ZŮSTÁVÁ** — to je nezávislý defenzivní fix, žádná regrese.
+- Lekce zapsaná do DETECTION.md §9 jako „slepá ulička": **stabilizační vrstva
+  nesmí přebít schopnost opravit ranní omyl.** Stejný typ chyby jako v9 bas-rozhodčí
+  — vyměnit obecnou správnost za jeden sporný edge case se nevyplácí.
+
+### Hotel California zpět jako známé omezení
+
+Modální směs (H nat. moll ⊕ H dorská), chroma bloudí podle pasáže. Pro jamování
+to vadí míň — 10A/11B/11A/9A jsou vzájemně kompatibilní, B moll pentatonika sedí
+na celý song. (Možné do budoucna: „soft latch", co ustoupí setrvale silnějšímu
+usazenému čtení — ale jen když nerozbije etalon. Zatím NE.)
+
+---
+
 ## 2026-06-11 (3) — keep-alive AudioContextu (v14) + odhalená příčina „silence"
 
 **Stav buildu:** `v14` · live na Vercelu.
