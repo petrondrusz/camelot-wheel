@@ -292,7 +292,7 @@ function updateFret(fE, fA, note) {
 const KK_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-const APP_VERSION = "v13"; // bump při každém deployi — ukazuje se v debug overlay,
+const APP_VERSION = "v14"; // bump při každém deployi — ukazuje se v debug overlay,
                            // ať jde screenshot spárovat s konkrétním buildem
 const CONF = 0.5;          // práh jistoty (Pearsonova korelace)
 const CONF_LOCK_MIN = 0.4; // po dlouhém stabilním držení (LOCK_FALLBACK_MS) stačí k zámku
@@ -918,6 +918,7 @@ function renderMeter(now) {
 
 function loop() {
   rafId = requestAnimationFrame(loop);
+  wakeAudio();           // keep the context alive against Safari/iOS auto-suspend
   if (!analyser) return;
   const now = performance.now();
   if (!reduceMotion) renderMeter(now);
@@ -984,7 +985,10 @@ function startListening() {
   // AudioContext vytvořit/resumnout synchronně v rámci gesta (iOS)
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === "suspended") audioCtx.resume();
+    // Safari/iOS suspend the context on their own (power saving, interruptions);
+    // resume it again whenever that happens, or the analyser goes silent forever.
+    audioCtx.onstatechange = () => { if (listening) wakeAudio(); };
+    if (audioCtx.state !== "running") audioCtx.resume().catch(() => {});
   } catch (e) {
     listening = false;
     micBtn.classList.remove("listening");
@@ -992,6 +996,14 @@ function startListening() {
     return;
   }
 
+  openMicStream();
+}
+
+// (Re)open the mic stream and wire up the analyser. Pulled out of startListening
+// so it can be re-run when iOS ENDS the track on an audio-session interruption
+// (phone call, Siri, switching to the music app) — otherwise we'd sit in permanent
+// silence. The rAF loop keeps running across a re-acquire; only `analyser` swaps.
+function openMicStream() {
   navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
   }).then(stream => {
@@ -1013,13 +1025,30 @@ function startListening() {
       bandRanges.push([lo, Math.max(lo + 1, hi)]);
     }
     micSrc.connect(analyser);
-    loop();
+    // A track that ENDS (iOS interruption) won't recover on its own — re-acquire.
+    stream.getAudioTracks().forEach(t => {
+      t.onended = () => {
+        if (!listening) return;
+        try { if (micSrc) micSrc.disconnect(); } catch (e) {}
+        micSrc = null; analyser = null; micStream = null;
+        wakeAudio(); openMicStream();
+      };
+    });
+    if (!rafId) loop();   // loop persists across re-acquires; don't double-schedule
   }).catch(() => {
     listening = false;
     micBtn.classList.remove("listening");
     micBtn.setAttribute("aria-pressed", "false");
     micStatus("Microphone unavailable");
   });
+}
+
+// Nudge the AudioContext back to running. Idempotent and cheap — a no-op when it's
+// already running, so it's safe to call every frame and on visibility/focus.
+function wakeAudio() {
+  if (audioCtx && audioCtx.state !== "running" && audioCtx.state !== "closed") {
+    audioCtx.resume().catch(() => {});
+  }
 }
 
 function stopListening() {
@@ -1105,6 +1134,11 @@ function initMic() {
   micBtn.addEventListener("click", () => {
     if (listening) stopListening(); else startListening();
   });
+
+  // Returning to the tab / app (or regaining focus) is a common moment for the
+  // context to be suspended — wake it so listening resumes without a re-tap.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && listening) wakeAudio(); });
+  window.addEventListener("focus", () => { if (listening) wakeAudio(); });
 
   // Debug overlay: ?debug in the URL, or a triple-tap on the title.
   try { if (new URLSearchParams(location.search).has("debug")) toggleDebug(); } catch (e) {}

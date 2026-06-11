@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-06-11 (3) — keep-alive AudioContextu (v14) + odhalená příčina „silence"
+
+**Stav buildu:** `v14` · live na Vercelu.
+
+### Symptom a SKUTEČNÁ příčina
+
+Overlay ukazoval `silence 32.4s … 55.3s — restarted`, hub spadl na mic ikonu,
+i když hudba hrála. **Desktopová záhada vyřešena uživatelem: zavřené víko MacBooku
+v clamshell režimu (externí monitor) → vestavěný mic se fyzicky vypnul.** Tj. desktop
+**nebyl bug v kódu**, ale HW. Mobilní „silence 55.3s" je samostatný výskyt — mohl být
+suspend kontextu nebo taky prostředí (pauza songu / přepnutí appky).
+
+### Co jsme přesto udělali (defenzivní hardening, v14)
+
+I tak má smysl: AudioContext se na **Safari/iOS sám suspenduje** (šetření energií /
+„interrupt") a `resume()` se volal jen jednou v `startListening`. To je reálná díra
+pro dlouhoběžící mic appky — opraveno, ať appka přežije i softwarový výpadek.
+**Není to regrese z v12/v13.**
+
+### Oprava — aktivní keep-alive
+
+- `wakeAudio()` (idempotentní `resume()` když stav ≠ running) se volá **každý frame**
+  ve `loop()`, na `audioCtx.onstatechange` a na `visibilitychange`/`focus`.
+- `openMicStream()` vytaženo ze `startListening` — když iOS **ukončí mic track**
+  (`onended`), stream se **znovu otevře** (jinak trvalé ticho). Loop běží dál, mění
+  se jen `analyser`; `if (!rafId)` brání dvojímu rAF.
+- Syntax OK. Funkčně ověřit na zařízení (HW-závislé, nejde simulovat v node).
+
+### Latch (v13) potvrzen v reálu
+
+#43 ukázal `locked:maj 11B` a uživatel potvrdil „od půlky drží 11B" → latch **drží**
+jednu odpověď, jak měl. (Pozn.: u Hotel California to drží 11B = dorská/relativní
+strana, ne 10A — chytlo se to později, až když dominovala křížková část. To je
+hraniční modální případ, ne chyba latche.)
+
+### Diagnostika pro uživatele
+
+Spodní VU sloupce se MUSÍ hýbat při zvuku. Když jsou ploché a kontext běží → HW/routing
+(mic neslyší song: sluchátka, špatný vstup, ztlumeno), ne appka.
+
+---
+
 ## 2026-06-11 (2) — LATCH: zamčená odpověď drží (v13) ⭐ přerámování účelu
 
 **Stav buildu:** `v13` · live na Vercelu.
